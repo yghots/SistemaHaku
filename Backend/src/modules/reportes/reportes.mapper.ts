@@ -35,6 +35,8 @@ export class ReportesMapper {
 
     return new ReporteMotorizadoItemDto({
       motorizadoId: row.motorizadoId.toString(),
+      nombres: row.nombres,
+      apellidos: row.apellidos,
       placa: row.placa,
       estado: row.estado,
       pedidosAtendidos: row.pedidosAtendidos,

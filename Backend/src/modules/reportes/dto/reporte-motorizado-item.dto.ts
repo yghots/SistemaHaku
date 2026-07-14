@@ -5,6 +5,12 @@ export class ReporteMotorizadoItemDto {
   @ApiProperty({ description: 'Id del perfil de motorizado' })
   motorizadoId: string;
 
+  @ApiProperty({ description: 'Nombres del usuario asociado (Fase 17)' })
+  nombres: string;
+
+  @ApiProperty({ description: 'Apellidos del usuario asociado (Fase 17)' })
+  apellidos: string;
+
   @ApiProperty({ description: 'Placa del vehiculo' })
   placa: string;
 

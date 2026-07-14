@@ -27,6 +27,8 @@ export class UsuariosService {
 
     try {
       const usuario = await this.usuariosRepository.crear({
+        nombres: dto.nombres,
+        apellidos: dto.apellidos,
         usuario: dto.usuario,
         correo: dto.correo,
         passwordHash,
@@ -76,6 +78,8 @@ export class UsuariosService {
 
     try {
       const usuarioActualizado = await this.usuariosRepository.actualizar(id, {
+        ...(dto.nombres ? { nombres: dto.nombres } : {}),
+        ...(dto.apellidos ? { apellidos: dto.apellidos } : {}),
         ...(dto.usuario ? { usuario: dto.usuario } : {}),
         ...(dto.correo ? { correo: dto.correo } : {}),
         ...(dto.rol ? { rol: dto.rol } : {}),

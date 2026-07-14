@@ -32,6 +32,7 @@ import type { PaginatedResponse } from '../../../types/api';
 import type { Pedido } from '../../../types/pedido';
 import { el } from '../../../utils/dom';
 import { fetchAllPages } from '../../../utils/fetch-all-pages';
+import { formatMotorizado } from '../../../utils/format-motorizado';
 import { PedidoFotos } from '../../admin/pedidos/pedido-fotos';
 import { PedidoHistorial } from '../../admin/pedidos/pedido-historial';
 
@@ -55,6 +56,7 @@ function formatMonto(value: string | null): string {
 export function HistorialPage(): HTMLElement {
   let clienteLabelById = new Map<string, string>();
   let sucursalLabelById = new Map<string, string>();
+  let motorizadoLabelById = new Map<string, string>();
   let pedidosCerrados: Pedido[] = [];
 
   const contentSlot = el(
@@ -93,10 +95,11 @@ export function HistorialPage(): HTMLElement {
         return;
       }
 
-      const [clientes, sucursales, tiendas, todosPedidos] = await Promise.all([
+      const [clientes, sucursales, tiendas, motorizados, todosPedidos] = await Promise.all([
         ClientesService.listar({ page: 1, limit: 100 }),
         SucursalesService.listar({ page: 1, limit: 100 }),
         TiendasService.listar({ page: 1, limit: 100 }),
+        MotorizadosService.listar({ page: 1, limit: 100 }),
         fetchAllPages((params) => PedidosService.listar(params)),
       ]);
 
@@ -109,6 +112,9 @@ export function HistorialPage(): HTMLElement {
           sucursal.id,
           `${sucursal.nombre} — ${tiendaLabelById.get(sucursal.tiendaId) ?? sucursal.tiendaId}`,
         ]),
+      );
+      motorizadoLabelById = new Map(
+        motorizados.data.map((motorizado) => [motorizado.id, formatMotorizado(motorizado)]),
       );
 
       pedidosCerrados = todosPedidos.filter(
@@ -135,6 +141,10 @@ export function HistorialPage(): HTMLElement {
 
   function sucursalLabel(sucursalId: string): string {
     return sucursalLabelById.get(sucursalId) ?? sucursalId;
+  }
+
+  function motorizadoLabel(motorizadoId: string): string {
+    return motorizadoLabelById.get(motorizadoId) ?? motorizadoId;
   }
 
   function fetchPageLocal(
@@ -259,7 +269,7 @@ export function HistorialPage(): HTMLElement {
         PedidosService.obtenerHistorial(pedido.id, { page: 1, limit: 50 }),
         PedidosService.obtenerFotos(pedido.id, { page: 1, limit: 50 }),
       ]);
-      historialSlot.replaceWith(PedidoHistorial(historial.data));
+      historialSlot.replaceWith(PedidoHistorial(historial.data, motorizadoLabel));
       fotosSlot.replaceWith(PedidoFotos(fotos.data));
     } catch (error) {
       await showApiError(error);

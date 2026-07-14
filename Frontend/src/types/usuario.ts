@@ -11,14 +11,18 @@ import type { UserRole } from './auth';
 /** Igual a UsuarioResponseDto. */
 export interface Usuario {
   id: string;
+  nombres: string;
+  apellidos: string;
   usuario: string;
   correo: string;
   rol: UserRole;
   activo: boolean;
 }
 
-/** Igual a CreateUsuarioDto (usuario: maxLength 50, correo: email maxLength 150, password: 8-100, rol: enum). */
+/** Igual a CreateUsuarioDto (nombres/apellidos: maxLength 100, usuario: maxLength 50, correo: email maxLength 150, password: 8-100, rol: enum). */
 export interface CreateUsuarioPayload {
+  nombres: string;
+  apellidos: string;
   usuario: string;
   correo: string;
   password: string;
@@ -27,6 +31,8 @@ export interface CreateUsuarioPayload {
 
 /** Igual a UpdateUsuarioDto = PartialType(CreateUsuarioDto): todos los campos opcionales. */
 export interface UpdateUsuarioPayload {
+  nombres?: string;
+  apellidos?: string;
   usuario?: string;
   correo?: string;
   password?: string;

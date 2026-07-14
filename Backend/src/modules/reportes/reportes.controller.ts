@@ -1,10 +1,19 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query, Res, StreamableFile } from '@nestjs/common';
+import {
+  ApiOperation,
+  ApiProduces,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Response } from 'express';
 import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
+import { ReporteEntregasExportQueryDto } from './dto/reporte-entregas-export-query.dto';
 import { ReporteEntregasQueryDto } from './dto/reporte-entregas-query.dto';
 import { ReporteMotorizadoItemDto } from './dto/reporte-motorizado-item.dto';
+import { ReporteMotorizadosExportQueryDto } from './dto/reporte-motorizados-export-query.dto';
 import { ReporteMotorizadosQueryDto } from './dto/reporte-motorizados-query.dto';
 import { ReportePedidoItemDto } from './dto/reporte-pedido-item.dto';
+import { ReportePedidosExportQueryDto } from './dto/reporte-pedidos-export-query.dto';
 import { ReportePedidosQueryDto } from './dto/reporte-pedidos-query.dto';
 import { ReportesService } from './reportes.service';
 
@@ -65,5 +74,93 @@ export class ReportesController {
     @Query() query: ReporteMotorizadosQueryDto,
   ): Promise<PaginatedResponseDto<ReporteMotorizadoItemDto>> {
     return this.reportesService.reporteMotorizados(query);
+  }
+
+  // Fase 18 — Infraestructura de Exportacion. Cada endpoint reutiliza
+  // exactamente los mismos filtros y la misma consulta que su reporte
+  // visual homonimo (ver ReportesService) — la unica responsabilidad de
+  // este controller es fijar los headers HTTP de descarga.
+
+  @Get('pedidos/export')
+  @ApiOperation({
+    summary:
+      'Exporta el Reporte de Pedidos (xlsx, pdf, csv, json o xml) con los mismos filtros de CU18',
+  })
+  @ApiProduces(
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/pdf',
+    'text/csv',
+    'application/json',
+    'application/xml',
+  )
+  @ApiResponse({ status: 200, description: 'Archivo generado' })
+  @ApiResponse({ status: 400, description: 'Parametros de consulta invalidos' })
+  async exportarReportePedidos(
+    @Query() query: ReportePedidosExportQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const archivo = await this.reportesService.exportarReportePedidos(query);
+    return this.enviarArchivo(res, archivo);
+  }
+
+  @Get('entregas/export')
+  @ApiOperation({
+    summary:
+      'Exporta el Reporte de Entregas (xlsx, pdf, csv, json o xml) con los mismos filtros de CU19',
+  })
+  @ApiProduces(
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/pdf',
+    'text/csv',
+    'application/json',
+    'application/xml',
+  )
+  @ApiResponse({ status: 200, description: 'Archivo generado' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Parametros de consulta invalidos, o el estado solicitado no corresponde a un estado final de entrega',
+  })
+  async exportarReporteEntregas(
+    @Query() query: ReporteEntregasExportQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const archivo = await this.reportesService.exportarReporteEntregas(query);
+    return this.enviarArchivo(res, archivo);
+  }
+
+  @Get('motorizados/export')
+  @ApiOperation({
+    summary:
+      'Exporta el Reporte de Productividad de Motorizados (xlsx, pdf, csv, json o xml) con los mismos filtros de CU20',
+  })
+  @ApiProduces(
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/pdf',
+    'text/csv',
+    'application/json',
+    'application/xml',
+  )
+  @ApiResponse({ status: 200, description: 'Archivo generado' })
+  @ApiResponse({ status: 400, description: 'Parametros de consulta invalidos' })
+  async exportarReporteMotorizados(
+    @Query() query: ReporteMotorizadosExportQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const archivo =
+      await this.reportesService.exportarReporteMotorizados(query);
+    return this.enviarArchivo(res, archivo);
+  }
+
+  /** Unico punto que fija los headers de descarga — reutilizado por los 3 endpoints de exportacion, ninguno repite esta logica. */
+  private enviarArchivo(
+    res: Response,
+    archivo: { buffer: Buffer; nombreArchivo: string; mimeType: string },
+  ): StreamableFile {
+    res.set({
+      'Content-Type': archivo.mimeType,
+      'Content-Disposition': `attachment; filename="${archivo.nombreArchivo}"`,
+    });
+    return new StreamableFile(archivo.buffer);
   }
 }

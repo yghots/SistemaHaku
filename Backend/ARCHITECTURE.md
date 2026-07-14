@@ -25,7 +25,8 @@ src/
     dto/                  PaginationQueryDto, PaginatedResponseDto (reutilizados por todos los modulos)
     filters/               HttpExceptionFilter (formato de error uniforme)
     interceptors/          LoggingInterceptor (log de metodo/ruta/status/duracion)
-    utils/                 assert-found.util.ts, prisma-error.util.ts (helpers compartidos, Fase 11)
+    utils/                 assert-found.util.ts, prisma-error.util.ts (Fase 11), fetch-all-pages.util.ts (Fase 18)
+    exports/               Infraestructura de exportacion de reportes (Fase 18, ver seccion 8)
   prisma/
     prisma.module.ts       Modulo global que expone PrismaService
     prisma.service.ts      Extiende PrismaClient, inyecta el adapter de MySQL, maneja conexion
@@ -131,7 +132,38 @@ reportes (sin imports de otros modulos, solo Prisma directo)
   - **Limitación**: no existe ningún mecanismo de sesión, token ni autorización por rol en ningún endpoint del sistema actualmente.
   - **Requisito obligatorio antes de producción**: este proyecto **no debe desplegarse con datos ni usuarios reales** sin resolver esta limitación (implementar JWT + guards + roles) — o, como mitigación temporal estrictamente paliativa, sin restringir el acceso de red a la API a una red privada/VPN de confianza. Ver `TECH_DEBT.md` (sección 1) para el alcance de la implementación futura.
 
-## 7. Manejo de errores
+## 7. Infraestructura de exportación de reportes (Fase 18)
+
+Capa agnóstica de reporte, agregada bajo `common/exports/` — ningún exportador conoce Pedidos/Entregas/Motorizados, solo un contrato genérico:
+
+```typescript
+interface ExportSolicitud {
+  titulo: string;
+  columnas: { clave: string; encabezado: string }[];
+  filas: Record<string, string | number>[];
+  filtros: Record<string, string>;
+  generadoPor: string;
+  generadoEn: Date;
+}
+interface ExportArchivo {
+  buffer: Buffer;
+  nombreArchivo: string;
+  mimeType: string;
+}
+interface IExportador {
+  exportar(solicitud: ExportSolicitud): Promise<ExportArchivo> | ExportArchivo;
+}
+```
+
+- **Un exportador por formato** (`ExcelExporter`, `PdfExporter`, `CsvExporter`, `JsonExporter`, `XmlExporter`), los 5 implementan `IExportador` y viven en `common/exports/{excel,pdf,csv,json,xml}/`. `ExportService` (`common/exports/export.service.ts`) es el único punto de despacho: recibe el `FormatoExportacion` pedido y delega en el exportador correspondiente — ningún otro código del proyecto instancia un exportador directamente.
+- **`ReportesService` nunca genera un archivo él mismo**: sus 3 métodos `exportarReporte{Pedidos,Entregas,Motorizados}` reutilizan exactamente el mismo método de repositorio (misma consulta Prisma) que su reporte visual homónimo, recorren todas las páginas con `fetchAllPages` (`common/utils/fetch-all-pages.util.ts`, mismo patrón que la utilidad equivalente del frontend), arman las filas planas con los mismos DTOs/Mapper ya existentes, y llaman a `ExportService.exportar(formato, solicitud)`. Cero lógica de generación de archivo fuera de `common/exports/`.
+- **`ReportesController` solo fija los headers HTTP de descarga**: un único método privado `enviarArchivo()` (reutilizado por los 3 endpoints `/export`) setea `Content-Type`/`Content-Disposition` y devuelve un `StreamableFile` (vía `@Res({ passthrough: true })`, no un `@Res()` crudo, para no perder el pipeline de Nest — interceptors/filters siguen aplicando).
+- **Nombre de archivo determinista**: `construirNombreArchivo()` (`export-filename.util.ts`) slugifica el título del reporte (sin tildes/mayúsculas) y le agrega un timestamp `YYYYMMDD-HHmmss`, ej. `reporte-de-pedidos_20260714-155729.xlsx`.
+- **Librerías**: `exceljs` (Excel — título fusionado, metadata, encabezado con fondo, ancho de columna aproximado por contenido ya que no existe autoajuste real fuera del cliente), `pdfkit` (PDF — tabla dibujada a mano con paginación automática y numeración vía `bufferPages`/`bufferedPageRange`, técnica estándar de esta librería al no tener widget de tabla nativo), `xmlbuilder2` (XML — evita errores de escape manual). CSV y JSON se implementan a mano (sin dependencia nueva): CSV con BOM UTF-8 + separador `,` + escape RFC 4180, JSON con `JSON.stringify` sobre una envoltura `{ reporte, generadoPor, generadoEn, filtros, totalRegistros, datos }`.
+- **CORS `exposedHeaders`**: `main.ts` expone `Content-Disposition` (`app.enableCors({ ..., exposedHeaders: ['Content-Disposition'] })`) — sin esto, el navegador oculta ese header a JavaScript aunque viaje en la respuesta, y el frontend no podría nombrar el archivo descargado con el nombre que decide el backend.
+- **Sin cambios de esquema, de autenticación ni de reglas de negocio**: esta fase es puramente infraestructura de presentación de datos ya existentes; `generadoPor` sigue el mismo patrón sin-JWT que `creadoPorId`/`usuarioId` (sección 6).
+
+## 8. Manejo de errores
 
 Filtro global (`HttpExceptionFilter`) intercepta toda excepción y devuelve un formato uniforme:
 
@@ -151,6 +183,6 @@ Filtro global (`HttpExceptionFilter`) intercepta toda excepción y devuelve un f
 - `409`: conflicto de unicidad (nombre/correo/usuario duplicado), conflicto de estado (transición de `Pedido` no permitida, incluida la condición de carrera detectada dentro de la transacción — ver sección 6) o violación de llave foránea al eliminar.
 - Errores no controlados (500): se loguea el stack trace del lado del servidor únicamente; la respuesta al cliente nunca incluye detalles internos — **este comportamiento estaba roto y se corrigió en la auditoría** (ver `AUDIT_REPORT.md`, hallazgo C2): antes de la corrección, `HttpExceptionFilter` devolvía `exception.message` para cualquier error que fuera una instancia de `Error` (es decir, prácticamente cualquier excepción no lanzada explícitamente por nuestro propio código, incluidos los errores de Prisma), filtrando texto interno al cliente. Ahora, para cualquier excepción que no sea un `HttpException` propio, el mensaje de respuesta es siempre el genérico `'Error interno del servidor'`, sin excepción — el detalle real solo se loguea del lado del servidor (`Logger.error`, con el `stack` completo). Los mensajes de los `HttpException` conocidos (400/401/403/404/409/422, todos lanzados deliberadamente por el propio código) no cambiaron.
 
-## 8. Configuración
+## 9. Configuración
 
 `ConfigModule` global carga `configuration.ts` (defaults) y valida con `env.validation.ts` (class-validator sobre las variables de entorno) al arrancar — si la configuración es inválida, la aplicación no levanta. Variables: `NODE_ENV`, `PORT`, `API_PREFIX`, `API_VERSION`, `CORS_ORIGIN`, `DATABASE_URL`.

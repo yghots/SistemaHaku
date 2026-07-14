@@ -64,6 +64,8 @@ enum TipoIncidente {
 
 model Usuario {
   id           BigInt     @id @default(autoincrement())
+  nombres      String     @db.VarChar(100)
+  apellidos    String     @db.VarChar(100)
   usuario      String     @unique @db.VarChar(50)
   correo       String     @unique @db.VarChar(150)
   passwordHash String     @map("password_hash") @db.VarChar(255)

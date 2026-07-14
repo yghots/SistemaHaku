@@ -2227,3 +2227,214 @@ internos del repositorio (nunca expuestos vía HTTP), por lo que este
 cambio no rompe compatibilidad con el frontend.
 
 **El backend vuelve a quedar en feature freeze** al cerrar esta fase.
+
+## Fase 14 — Incorporación de `nombres`/`apellidos` al modelo Usuario (proyecto Fase 16)
+
+Excepción explícita al feature freeze de la Fase 12/13: enriquecimiento
+puntual y acotado del modelo `Usuario` con dos campos de persona
+(`nombres`, `apellidos`), a pedido explícito del cliente. Ninguna otra
+tabla, relación, índice ni enum se tocó. El login sigue funcionando
+exactamente igual (`identificador` + `password`); no se implementó JWT.
+
+### Modelo Prisma
+
+`Usuario` gana `nombres String @db.VarChar(100)` y
+`apellidos String @db.VarChar(100)`, ambos obligatorios, ubicados justo
+después de `id` (antes de las columnas de cuenta `usuario`/`correo`/
+`passwordHash`). Sin cambios en relaciones, índices ni enums.
+
+### Migración
+
+`20260714161908_add_nombres_apellidos_usuario`. El proyecto solo tenía
+datos de prueba (17 filas en `usuarios` al momento de migrar) — se usó
+un `DEFAULT 'Pendiente'` temporal únicamente para poder aplicar la
+restricción `NOT NULL` sobre las filas existentes (backfill), eliminado
+en la misma migración (`ALTER COLUMN ... DROP DEFAULT`) para que el
+estado final de ambas columnas coincida exactamente con `schema.prisma`
+(sin `@default`): cualquier fila nueva debe proveer estos campos
+explícitamente. No se intentó reconstruir nombres reales para las filas
+de prueba existentes — decisión explícita del cliente para esta fase
+("no es necesario preservar registros antiguos").
+
+### Backend — capas actualizadas
+
+- `CreateUsuarioDto` — `nombres`/`apellidos` obligatorios
+  (`@IsString @IsNotEmpty @MaxLength(100)`), agregados antes de
+  `usuario` para reflejar que identifican a la persona antes que a la
+  cuenta.
+- `UsuarioResponseDto` — `nombres`/`apellidos` agregados.
+- `UsuariosMapper.toResponseDto` — mapea los dos campos nuevos.
+- `UsuariosService.crear`/`actualizar` — pasa `nombres`/`apellidos` al
+  repositorio (en `actualizar`, con el mismo patrón condicional ya usado
+  para `usuario`/`correo`/`rol`: solo se incluye si vino en el DTO).
+- `CrearUsuarioData`/`ActualizarUsuarioData`
+  (`usuarios-repository.interface.ts`) — agregan los dos campos.
+- **Sin cambios necesarios** en: `UpdateUsuarioDto` (`PartialType(CreateUsuarioDto)`
+  ya vuelve `nombres`/`apellidos` opcionales automáticamente),
+  `RegisterDto` (`OmitType(CreateUsuarioDto, ['rol'])` ya hereda los
+  campos nuevos), `AuthResponseDto`/`AuthService`/`AuthController`
+  (envuelven `UsuarioResponseDto` tal cual), `UsuariosController`,
+  `UsuariosRepository` (ya hace spread genérico de `data` hacia Prisma).
+  Esto confirma que el diseño de DTOs por composición (`PartialType`/
+  `OmitType`) de las fases anteriores paga dividendos reales: un campo
+  nuevo en el DTO base se propaga solo, sin tocar los DTOs derivados.
+
+### Pruebas funcionales realizadas (contra MySQL real)
+
+- `POST /usuarios` con `nombres`/`apellidos` → `201`, campos presentes
+  en la respuesta.
+- `POST /usuarios` sin `nombres` → `400` con los 3 mensajes de
+  validación esperados (`IsString`/`IsNotEmpty`/`MaxLength`).
+- `POST /auth/register` (autorregistro motorizado) con
+  `nombres`/`apellidos` → `201`, campos presentes.
+- `POST /auth/login` con una cuenta ya existente → `200`, respuesta
+  incluye `nombres`/`apellidos` (verificado con una cuenta de prueba
+  pre-existente, backfileada con `'Pendiente'/'Pendiente'` por la
+  migración, y con una cuenta nueva creada en esta misma verificación).
+- `PATCH /usuarios/:id` actualizando solo `apellidos` → confirmado que
+  `nombres` no se pisa (mismo patrón condicional que el resto de
+  campos).
+- Regresión: `GET /reportes/pedidos|entregas|motorizados`,
+  `GET /perfiles-motorizados` → `200` sin cambios, `prisma validate` ✓,
+  `tsc --noEmit` ✓, `npm run build` ✓, `npm run lint` ✓, `npm test`
+  (unit) ✓, `npm run test:e2e` ✓.
+- Los 2 usuarios de prueba creados durante esta verificación se
+  eliminaron lógicamente al finalizar (mismo mecanismo de `DELETE
+/usuarios/:id` de siempre).
+
+### Archivos modificados
+
+- `prisma/schema.prisma`
+- `prisma/migrations/20260714161908_add_nombres_apellidos_usuario/migration.sql` (nuevo)
+- `src/modules/usuarios/dto/create-usuario.dto.ts`
+- `src/modules/usuarios/dto/usuario-response.dto.ts`
+- `src/modules/usuarios/usuarios.mapper.ts`
+- `src/modules/usuarios/usuarios.service.ts`
+- `src/modules/usuarios/interfaces/usuarios-repository.interface.ts`
+
+Ningún otro módulo, tabla, relación ni endpoint fue modificado.
+`API_OVERVIEW.md` actualizado (menciones puntuales de `nombres`/
+`apellidos` en Usuarios/Auth). `ARCHITECTURE.md` no requirió cambios:
+ninguna decisión arquitectónica permanente cambió, solo se enriqueció
+un modelo existente siguiendo exactamente los patrones ya establecidos.
+
+**El backend vuelve a quedar en feature freeze** al cerrar esta fase.
+
+## Fase 15 — Representación Unificada del Motorizado (proyecto Fase 17)
+
+Excepción explícita al feature freeze: ningún endpoint que devolviera
+información de un motorizado incluía su nombre — varios exponían
+únicamente `placa` (o, en el caso de Incidentes/Historial, ni siquiera
+eso: solo el id crudo). Esta fase extiende únicamente los dos
+contratos donde realmente hacía falta, sin tocar lógica de negocio, ids,
+relaciones de base de datos ni ningún otro DTO.
+
+### Consultas Prisma actualizadas
+
+- `PerfilesMotorizadosRepository` — las 6 operaciones (`crear`,
+  `buscarPorId`, `buscarPorUsuarioId`, `buscarMuchos`, `actualizar`,
+  `eliminar`) ahora usan `include: { usuario: { select: { nombres: true,
+apellidos: true } } }` (constante `INCLUDE_USUARIO` única, reutilizada
+  por las 6 — sin duplicar el include). Un solo query por operación, sin
+  N+1.
+- `ReportesRepository.reporteMotorizados` — el `select` del
+  `perfilMotorizado.findMany` agrega
+  `usuario: { select: { nombres: true, apellidos: true } } }`.
+  `reportePedidos`/`reporteEntregas` **no** se tocaron: ya devolvían
+  únicamente `motorizadoActualId` (ni siquiera `placa`), y el frontend
+  ya resuelve la representación completa cruzando ese id contra
+  `GET /perfiles-motorizados` (ahora enriquecido) — agregar
+  `nombres`/`apellidos`/`placa` a cada fila de esos dos reportes hubiera
+  sido duplicar datos que el frontend ya puede obtener de forma más
+  eficiente con una sola consulta adicional cacheada al montar la página.
+
+### DTOs modificados
+
+- `PerfilMotorizadoResponseDto` — agrega `nombres`, `apellidos`.
+- `ReporteMotorizadoItemDto` — agrega `nombres`, `apellidos`.
+- **Sin cambios** en: `PedidoResponseDto`, `IncidenteResponseDto`,
+  `HistorialPedidoResponseDto`, `ReportePedidoItemDto` — todos siguen
+  exponiendo únicamente el id del motorizado (`motorizadoId`/
+  `motorizadoActualId`), tal como antes.
+
+### Tipos internos
+
+`IPerfilesMotorizadosRepository` — los 6 métodos cambian su tipo de
+retorno de `Promise<PerfilMotorizado>` (tipo crudo de Prisma) a
+`Promise<PerfilMotorizadoConUsuario>` (`PerfilMotorizado & { usuario:
+{ nombres: string; apellidos: string } }`, definido en el propio archivo
+de interfaz). `ReporteMotorizadoRow` gana `nombres`/`apellidos`.
+`PerfilesMotorizadosService`/`PerfilesMotorizadosMapper` actualizados
+para el nuevo tipo — ningún otro consumidor de
+`PerfilesMotorizadosService` (ej. `flujo-pedido.service.ts`, que solo
+lee `PerfilMotorizadoResponseDto` ya mapeado) necesitó cambios.
+
+### Pruebas funcionales realizadas (contra MySQL real)
+
+- `GET /perfiles-motorizados` y `GET /perfiles-motorizados/:id` →
+  incluyen `nombres`/`apellidos` reales del usuario asociado.
+- `GET /reportes/motorizados` → cada fila incluye `nombres`/`apellidos`
+  junto a `placa`, `estado` y las métricas ya existentes.
+- Verificado extremo a extremo con datos reales: se actualizó el nombre
+  de dos usuarios de prueba con perfil de motorizado (`PATCH
+/usuarios/:id`) y se confirmó que `GET /perfiles-motorizados` y
+  `GET /reportes/motorizados` reflejaron el cambio inmediatamente (ej.
+  "Carlos" + "Rojas" + placa `F8-0002`).
+- Regresión: `prisma validate` ✓, `prisma generate` ✓,
+  `tsc --noEmit` ✓, `npm run build` ✓, `npm run lint` ✓, `npm test`
+  (unit) ✓, `npm run test:e2e` ✓.
+
+### Archivos modificados
+
+- `src/modules/perfiles-motorizados/dto/perfil-motorizado-response.dto.ts`
+- `src/modules/perfiles-motorizados/interfaces/perfiles-motorizados-repository.interface.ts`
+- `src/modules/perfiles-motorizados/perfiles-motorizados.repository.ts`
+- `src/modules/perfiles-motorizados/perfiles-motorizados.mapper.ts`
+- `src/modules/perfiles-motorizados/perfiles-motorizados.service.ts`
+- `src/modules/reportes/dto/reporte-motorizado-item.dto.ts`
+- `src/modules/reportes/interfaces/reportes-repository.interface.ts`
+- `src/modules/reportes/reportes.repository.ts`
+- `src/modules/reportes/reportes.mapper.ts`
+
+Ningún DTO público perdió compatibilidad (solo se agregaron campos);
+ningún endpoint, id, relación de base de datos ni regla de negocio
+cambió. `API_OVERVIEW.md` actualizado con la mención puntual de los
+campos nuevos.
+
+## Fase 16 — Infraestructura de Exportación de Reportes (proyecto Fase 18)
+
+Excepción explícita al feature freeze: se agrega infraestructura de exportación (Excel/PDF/CSV/JSON/XML) para los 3 reportes existentes (CU18/CU19/CU20). Ninguna tabla, relación, DTO de reporte visual, regla de negocio ni endpoint de solo lectura existente se modificó — solo se agregaron 3 endpoints nuevos (`GET /reportes/{pedidos,entregas,motorizados}/export`) y una capa nueva bajo `common/exports/`.
+
+### Diseño
+
+- **Capa agnóstica de reporte** (`common/exports/`): un contrato único (`ExportSolicitud` = título, columnas, filas, filtros, generadoPor, generadoEn) y un `IExportador` por formato. Ningún exportador conoce Pedidos/Entregas/Motorizados — reciben siempre la misma forma de datos, sin importar el reporte de origen. Ver `ARCHITECTURE.md` §7 para el contrato completo.
+- **`ExportService`** (`common/exports/export.service.ts`) despacha al exportador correspondiente según `FormatoExportacion`; es la única puerta de entrada a la generación de archivos.
+- **`ReportesService` nunca genera el archivo**: sus 3 métodos nuevos (`exportarReportePedidos`/`exportarReporteEntregas`/`exportarReporteMotorizados`) reutilizan **exactamente** el mismo método de repositorio que su reporte visual homónimo (misma consulta Prisma, mismos filtros), recorren todas las páginas con la nueva utilidad `common/utils/fetch-all-pages.util.ts` (mismo patrón que la utilidad equivalente ya existente en el frontend desde la Fase 8 del proyecto), y delegan en `ExportService.exportar(...)`.
+- **DTOs de exportación** (`Reporte{Pedidos,Entregas,Motorizados}ExportQueryDto`): cada uno es `OmitType(<QueryDto existente>, ['page', 'limit'])` + `formato`/`generadoPor` — garantiza paridad exacta de filtros con el reporte visual sin duplicar decoradores de validación.
+- **`ReportesController`**: 3 endpoints nuevos, cada uno llama al service y delega en un único método privado `enviarArchivo()` que fija `Content-Type`/`Content-Disposition` y devuelve un `StreamableFile` (vía `@Res({ passthrough: true })`, preservando el pipeline de Nest).
+- **Columnas expuestas por reporte**: Pedidos/Entregas comparten fila (mismo DTO base) con `Cliente (id)`/`Motorizado (id)` **crudos** (el reporte visual tampoco resuelve esos ids a nombre en el backend — se decidió no agregar joins nuevos solo para exportar, ya que eso violaría "reutilizar la misma consulta, no crear una distinta"); Motorizados expone `nombres`/`apellidos`/`placa` como columnas separadas (nunca concatenadas — la API sigue entregando datos estructurados, la concatenación es responsabilidad exclusiva del frontend, `formatMotorizado`).
+- **CORS**: se agregó `exposedHeaders: ['Content-Disposition']` a `app.enableCors(...)` en `main.ts` — sin esto, el navegador oculta ese header a JavaScript aunque viaje en la respuesta, y el frontend no podría leer el nombre de archivo que decide el backend. Única modificación fuera de `reportes`/`common/exports`.
+
+### Librerías nuevas
+
+`exceljs` (Excel), `pdfkit` + `@types/pdfkit` (PDF), `xmlbuilder2` (XML). CSV y JSON se implementaron a mano (sin dependencia nueva): ambos son simples de generar correctamente sin librería (CSV: BOM UTF-8 + separador `,` + escape RFC 4180; JSON: `JSON.stringify` nativo).
+
+### Pruebas funcionales realizadas (contra MySQL real, servidor en modo watch)
+
+- Las 15 combinaciones (3 reportes × 5 formatos) → `200`, `Content-Type` correcto por formato, `Content-Disposition` con nombre de archivo generado (`<slug-del-titulo>_<YYYYMMDD-HHmmss>.<ext>`).
+- Contenido verificado por formato: JSON/XML reflejan `filtros` aplicados (ej. `estado=entregado` en Entregas) y `totalRegistros` correcto; CSV con BOM UTF-8 válido (`efbbbf`) y filas escapadas correctamente; XLSX es un ZIP válido (`PK\x03\x04`) y se releyó con `exceljs` confirmando título fusionado, metadata, encabezado y datos; PDF con magic bytes válidos (`%PDF-1.3`); los 3 XML se validaron como bien formados con el parser `[xml]` de PowerShell.
+- Casos de error: `formato` inválido → `400` con mensaje de `class-validator`; `generadoPor` faltante → `400`; `estado` inválido en `entregas/export` → `400` reutilizando la misma validación (`validarEstadoReporteEntregas`) que el reporte visual.
+- Regresión: `prisma validate` ✓, `prisma generate` ✓, `tsc --noEmit` ✓, `npm run build` ✓, `npm run lint` (eslint + prettier) ✓, `npm test` (unit) ✓, `npm run test:e2e` ✓.
+
+### Archivos modificados/creados
+
+- `common/exports/` (nuevo): `export.types.ts`, `export.service.ts`, `export.module.ts`, `export-filename.util.ts`, `excel/excel.exporter.ts`, `pdf/pdf.exporter.ts`, `csv/csv.exporter.ts`, `json/json.exporter.ts`, `xml/xml.exporter.ts`.
+- `common/utils/fetch-all-pages.util.ts` (nuevo).
+- `modules/reportes/dto/reporte-{pedidos,entregas,motorizados}-export-query.dto.ts` (nuevos).
+- `modules/reportes/reportes.service.ts`, `reportes.controller.ts`, `reportes.module.ts` (extendidos).
+- `main.ts` (`exposedHeaders`).
+- `package.json` (3 dependencias nuevas + 1 devDependency).
+
+Ningún módulo fuera de `reportes`/`common/exports` ni ninguna tabla/migración se tocó. `API_OVERVIEW.md` y `ARCHITECTURE.md` (§7) actualizados.
+
+**El backend vuelve a quedar en feature freeze** al cerrar esta fase.

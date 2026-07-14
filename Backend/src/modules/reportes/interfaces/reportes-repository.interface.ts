@@ -44,6 +44,8 @@ export interface ReporteEntregasParams {
 
 export interface ReporteMotorizadoRow {
   motorizadoId: bigint;
+  nombres: string;
+  apellidos: string;
   placa: string;
   estado: EstadoMotorizado;
   pedidosAtendidos: number;

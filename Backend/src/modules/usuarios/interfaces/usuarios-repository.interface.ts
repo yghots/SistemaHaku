@@ -3,6 +3,8 @@ import { Usuario } from '@prisma/client';
 export const USUARIOS_REPOSITORY = Symbol('USUARIOS_REPOSITORY');
 
 export interface CrearUsuarioData {
+  nombres: string;
+  apellidos: string;
   usuario: string;
   correo: string;
   passwordHash: string;
@@ -10,6 +12,8 @@ export interface CrearUsuarioData {
 }
 
 export interface ActualizarUsuarioData {
+  nombres?: string;
+  apellidos?: string;
   usuario?: string;
   correo?: string;
   passwordHash?: string;

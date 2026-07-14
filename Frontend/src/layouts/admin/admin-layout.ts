@@ -19,6 +19,7 @@ import { env } from '../../config/env';
 import { SessionService } from '../../services/session.service';
 import { el } from '../../utils/dom';
 import { logout } from '../../utils/logout';
+import { nombreCompleto } from '../../utils/nombre-completo';
 import type { LayoutHandle } from '../layout.types';
 
 const ADMIN_NAV_ITEMS: SidebarNavItem[] = [
@@ -51,7 +52,7 @@ export function AdminLayout(): AdminLayoutHandle {
   });
   const navbar = Navbar({
     appName: env.appName,
-    userName: currentUser?.usuario ?? 'Administrador',
+    userName: currentUser ? nombreCompleto(currentUser) : 'Administrador',
     profileHref: '/admin/perfil',
     onLogout: logout,
     onMenuClick: () => sidebar.toggleDrawer(),

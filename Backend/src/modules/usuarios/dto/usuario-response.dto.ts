@@ -5,6 +5,12 @@ export class UsuarioResponseDto {
   @ApiProperty({ description: 'Identificador unico del usuario' })
   id: string;
 
+  @ApiProperty({ description: 'Nombres de la persona' })
+  nombres: string;
+
+  @ApiProperty({ description: 'Apellidos de la persona' })
+  apellidos: string;
+
   @ApiProperty({ description: 'Nombre de usuario para iniciar sesion' })
   usuario: string;
 

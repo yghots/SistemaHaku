@@ -17,7 +17,15 @@ async function bootstrap(): Promise<void> {
 
   app.use(helmet());
   app.use(compression());
-  app.enableCors({ origin: corsOrigin, credentials: true });
+  // `exposedHeaders`: sin esto, el navegador oculta Content-Disposition a
+  // JS aunque el header viaje en la respuesta — el frontend lo necesita
+  // para nombrar el archivo descargado en los endpoints de exportacion
+  // (Fase 18, ver Backend/src/common/exports).
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: true,
+    exposedHeaders: ['Content-Disposition'],
+  });
 
   app.setGlobalPrefix(apiPrefix);
   app.enableVersioning({

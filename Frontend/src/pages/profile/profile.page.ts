@@ -16,6 +16,7 @@ import { HttpError } from '../../services/http/http-error';
 import { ProfileService } from '../../services/profile.service';
 import type { Usuario } from '../../types/usuario';
 import { el } from '../../utils/dom';
+import { nombreCompleto } from '../../utils/nombre-completo';
 import { getTheme, onThemeChange, setTheme, type Theme } from '../../utils/theme';
 
 /**
@@ -74,6 +75,18 @@ export function ProfilePage(): HTMLElement {
     }
 
     function buildInfoCard(usuario: Usuario): HTMLElement {
+      const nombresField = Input({
+        name: 'nombres',
+        label: 'Nombres',
+        required: true,
+        value: usuario.nombres,
+      });
+      const apellidosField = Input({
+        name: 'apellidos',
+        label: 'Apellidos',
+        required: true,
+        value: usuario.apellidos,
+      });
       const usuarioField = Input({
         name: 'usuario',
         label: 'Usuario',
@@ -91,13 +104,33 @@ export function ProfilePage(): HTMLElement {
       const saveButton = Button({ label: 'Guardar cambios', onClick: () => void handleGuardar() });
 
       async function handleGuardar(): Promise<void> {
+        nombresField.setError(undefined);
+        apellidosField.setError(undefined);
         usuarioField.setError(undefined);
         correoField.setError(undefined);
 
+        const nombresValue = nombresField.input.value.trim();
+        const apellidosValue = apellidosField.input.value.trim();
         const usuarioValue = usuarioField.input.value.trim();
         const correoValue = correoField.input.value.trim();
 
         let valid = true;
+        if (!nombresValue) {
+          nombresField.setError('Este campo es obligatorio');
+          valid = false;
+        } else if (nombresValue.length > 100) {
+          nombresField.setError('Maximo 100 caracteres');
+          valid = false;
+        }
+
+        if (!apellidosValue) {
+          apellidosField.setError('Este campo es obligatorio');
+          valid = false;
+        } else if (apellidosValue.length > 100) {
+          apellidosField.setError('Maximo 100 caracteres');
+          valid = false;
+        }
+
         if (!usuarioValue) {
           usuarioField.setError('Este campo es obligatorio');
           valid = false;
@@ -119,6 +152,8 @@ export function ProfilePage(): HTMLElement {
         saveButton.disabled = true;
         try {
           const actualizado = await ProfileService.actualizarPerfil({
+            nombres: nombresValue,
+            apellidos: apellidosValue,
             usuario: usuarioValue,
             correo: correoValue,
           });
@@ -139,18 +174,20 @@ export function ProfilePage(): HTMLElement {
           el(
             'div',
             { className: 'flex items-center gap-4' },
-            Avatar({ name: usuario.usuario, size: 'lg' }),
+            Avatar({ name: nombreCompleto(usuario), size: 'lg' }),
             el(
               'div',
               { className: 'flex flex-col gap-1' },
               el(
                 'span',
                 { className: 'text-base font-semibold text-text-primary' },
-                usuario.usuario,
+                nombreCompleto(usuario),
               ),
               el('span', { className: 'text-sm text-text-muted' }, usuario.correo),
             ),
           ),
+          nombresField.wrapper,
+          apellidosField.wrapper,
           usuarioField.wrapper,
           correoField.wrapper,
           DetailList({

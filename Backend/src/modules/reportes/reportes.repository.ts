@@ -134,7 +134,12 @@ export class ReportesRepository implements IReportesRepository {
         skip: params.skip,
         take: params.take,
         orderBy: { id: 'asc' },
-        select: { id: true, placa: true, estado: true },
+        select: {
+          id: true,
+          placa: true,
+          estado: true,
+          usuario: { select: { nombres: true, apellidos: true } },
+        },
       }),
       this.prisma.perfilMotorizado.count({ where: whereMotorizado }),
     ]);
@@ -191,6 +196,8 @@ export class ReportesRepository implements IReportesRepository {
 
     const data: ReporteMotorizadoRow[] = motorizados.map((m) => ({
       motorizadoId: m.id,
+      nombres: m.usuario.nombres,
+      apellidos: m.usuario.apellidos,
       placa: m.placa,
       estado: m.estado,
       pedidosAtendidos: atendidosPorMotorizado.get(m.id.toString()) ?? 0,

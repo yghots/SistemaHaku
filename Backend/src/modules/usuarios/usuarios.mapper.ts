@@ -5,6 +5,8 @@ export class UsuariosMapper {
   static toResponseDto(usuario: Usuario): UsuarioResponseDto {
     return new UsuarioResponseDto({
       id: usuario.id.toString(),
+      nombres: usuario.nombres,
+      apellidos: usuario.apellidos,
       usuario: usuario.usuario,
       correo: usuario.correo,
       rol: usuario.rol,

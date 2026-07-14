@@ -27,6 +27,7 @@ import { SucursalesService } from '../../../services/sucursales.service';
 import { TiendasService } from '../../../services/tiendas.service';
 import { ESTADOS_CANCELABLES, type EstadoPedido, type Pedido } from '../../../types/pedido';
 import { el } from '../../../utils/dom';
+import { formatMotorizado } from '../../../utils/format-motorizado';
 import { toSelectOptions } from '../../../utils/select-options';
 import { buildPedidoForm } from './pedido-form';
 import { PedidoFotos } from './pedido-fotos';
@@ -108,13 +109,13 @@ export function PedidosPage(): HTMLElement {
       motorizadoLabelById = new Map(
         motorizados.data.map((motorizado) => [
           motorizado.id,
-          `${motorizado.placa} (${motorizado.estado})`,
+          `${formatMotorizado(motorizado)} (${motorizado.estado})`,
         ]),
       );
       motorizadoOptions = toSelectOptions(
         motorizados.data,
         (motorizado) => motorizado.id,
-        (motorizado) => motorizadoLabelById.get(motorizado.id) ?? motorizado.placa,
+        (motorizado) => motorizadoLabelById.get(motorizado.id) ?? formatMotorizado(motorizado),
       );
 
       newButton.disabled = false;
@@ -289,7 +290,7 @@ export function PedidosPage(): HTMLElement {
         PedidosService.obtenerHistorial(pedido.id, { page: 1, limit: 50 }),
         PedidosService.obtenerFotos(pedido.id, { page: 1, limit: 50 }),
       ]);
-      historialSlot.replaceWith(PedidoHistorial(historial.data));
+      historialSlot.replaceWith(PedidoHistorial(historial.data, motorizadoLabel));
       fotosSlot.replaceWith(PedidoFotos(fotos.data));
     } catch (error) {
       await showApiError(error);

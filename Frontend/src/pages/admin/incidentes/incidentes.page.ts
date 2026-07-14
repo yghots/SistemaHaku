@@ -6,10 +6,15 @@ import { RowActions } from '../../../components/datatable/row-actions';
 import { DetailList } from '../../../components/detail-list/detail-list';
 import { Modal } from '../../../components/modal/modal';
 import { PageHeader } from '../../../components/page-header/page-header';
-import { ResourceTable } from '../../../components/resource-table/resource-table';
+import {
+  ResourceTable,
+  type ResourceTableHandle,
+} from '../../../components/resource-table/resource-table';
 import { IncidentesService } from '../../../services/incidentes.service';
+import { MotorizadosService } from '../../../services/motorizados.service';
 import type { Incidente, TipoIncidente } from '../../../types/incidente';
 import { el } from '../../../utils/dom';
+import { formatMotorizado } from '../../../utils/format-motorizado';
 
 const TIPO_INCIDENTE_LABEL: Record<TipoIncidente, string> = {
   accidente: 'Accidente',
@@ -25,6 +30,12 @@ const TIPO_INCIDENTE_LABEL: Record<TipoIncidente, string> = {
  * no de este panel.
  */
 export function IncidentesPage(): HTMLElement {
+  let motorizadoLabelById = new Map<string, string>();
+
+  function motorizadoLabel(motorizadoId: string): string {
+    return motorizadoLabelById.get(motorizadoId) ?? motorizadoId;
+  }
+
   const columns: DataTableColumn<Incidente>[] = [
     { key: 'id', header: 'ID' },
     {
@@ -32,7 +43,11 @@ export function IncidentesPage(): HTMLElement {
       header: 'Pedido',
       render: (row) => (row.pedidoId ? `#${row.pedidoId}` : '—'),
     },
-    { key: 'motorizadoId', header: 'Motorizado', render: (row) => `#${row.motorizadoId}` },
+    {
+      key: 'motorizadoId',
+      header: 'Motorizado',
+      render: (row) => motorizadoLabel(row.motorizadoId),
+    },
     {
       key: 'tipo',
       header: 'Tipo',
@@ -55,7 +70,7 @@ export function IncidentesPage(): HTMLElement {
     },
   ];
 
-  const table = ResourceTable<Incidente, { tipo: string; resuelto: string }>({
+  const table: ResourceTableHandle = ResourceTable<Incidente, { tipo: string; resuelto: string }>({
     columns,
     getRowKey: (row) => row.id,
     fetchPage: (params) =>
@@ -86,6 +101,13 @@ export function IncidentesPage(): HTMLElement {
     emptyDescription: 'Los motorizados registran incidentes desde su propio panel.',
   });
 
+  void MotorizadosService.listar({ page: 1, limit: 100 }).then((response) => {
+    motorizadoLabelById = new Map(
+      response.data.map((motorizado) => [motorizado.id, formatMotorizado(motorizado)]),
+    );
+    table.reload();
+  });
+
   function openDetailModal(incidente: Incidente): void {
     const modal = Modal({
       title: 'Detalle de incidente',
@@ -93,7 +115,7 @@ export function IncidentesPage(): HTMLElement {
         fields: [
           { label: 'ID', value: incidente.id },
           { label: 'Pedido', value: incidente.pedidoId ? `#${incidente.pedidoId}` : '—' },
-          { label: 'Motorizado', value: `#${incidente.motorizadoId}` },
+          { label: 'Motorizado', value: motorizadoLabel(incidente.motorizadoId) },
           { label: 'Tipo', value: TIPO_INCIDENTE_LABEL[incidente.tipo] },
           { label: 'Resuelto', value: incidente.resuelto ? 'Si' : 'No' },
         ],

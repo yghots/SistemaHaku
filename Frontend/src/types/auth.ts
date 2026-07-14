@@ -10,6 +10,8 @@ export type UserRole = 'administrador' | 'motorizado';
 /** Igual a UsuarioResponseDto (backend). */
 export interface AuthUser {
   id: string;
+  nombres: string;
+  apellidos: string;
   usuario: string;
   correo: string;
   rol: UserRole;

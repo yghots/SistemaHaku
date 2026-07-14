@@ -12,10 +12,12 @@
 
 export type EstadoMotorizado = 'disponible' | 'ocupado' | 'inactivo';
 
-/** Igual a PerfilMotorizadoResponseDto. */
+/** Igual a PerfilMotorizadoResponseDto (`nombres`/`apellidos` del usuario asociado, incorporados en la Fase 17). */
 export interface PerfilMotorizado {
   id: string;
   usuarioId: string;
+  nombres: string;
+  apellidos: string;
   placa: string;
   estado: EstadoMotorizado;
 }

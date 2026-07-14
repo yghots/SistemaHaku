@@ -8,6 +8,12 @@ export class PerfilMotorizadoResponseDto {
   @ApiProperty({ description: 'Id del usuario asociado' })
   usuarioId: string;
 
+  @ApiProperty({ description: 'Nombres del usuario asociado (Fase 17)' })
+  nombres: string;
+
+  @ApiProperty({ description: 'Apellidos del usuario asociado (Fase 17)' })
+  apellidos: string;
+
   @ApiProperty({ description: 'Placa del vehiculo que usa' })
   placa: string;
 

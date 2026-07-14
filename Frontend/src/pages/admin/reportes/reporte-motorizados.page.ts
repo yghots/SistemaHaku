@@ -2,6 +2,7 @@ import { Bike, PackageCheck, TrendingUp, Truck } from 'lucide';
 import { infoAlert } from '../../../components/alert/alert';
 import { Badge } from '../../../components/badge/badge';
 import type { DataTableColumn } from '../../../components/datatable/datatable';
+import { ExportButton } from '../../../components/export-button/export-button';
 import { Loader } from '../../../components/loader/loader';
 import { PageHeader } from '../../../components/page-header/page-header';
 import {
@@ -13,10 +14,14 @@ import { StatCard } from '../../../components/stat-card/stat-card';
 import { HttpError } from '../../../services/http/http-error';
 import { MotorizadosService } from '../../../services/motorizados.service';
 import { ReportesService } from '../../../services/reportes.service';
+import { SessionService } from '../../../services/session.service';
 import type { EstadoMotorizado } from '../../../types/perfil-motorizado';
 import type { ReporteMotorizadoItem } from '../../../types/reporte';
+import { downloadBlob } from '../../../utils/download-file';
 import { el } from '../../../utils/dom';
 import { fetchAllPages } from '../../../utils/fetch-all-pages';
+import { formatMotorizado } from '../../../utils/format-motorizado';
+import { nombreCompleto } from '../../../utils/nombre-completo';
 
 const ESTADO_MOTORIZADO_LABEL: Record<EstadoMotorizado, string> = {
   disponible: 'Disponible',
@@ -32,7 +37,7 @@ const ESTADO_MOTORIZADO_BADGE_VARIANT: Record<EstadoMotorizado, 'success' | 'war
   };
 
 const COLUMNS: DataTableColumn<ReporteMotorizadoItem>[] = [
-  { key: 'placa', header: 'Placa' },
+  { key: 'nombres', header: 'Motorizado', render: (row) => formatMotorizado(row) },
   {
     key: 'estado',
     header: 'Estado',
@@ -70,6 +75,20 @@ export function ReporteMotorizadosPage(): HTMLElement {
     Loader({ label: 'Cargando motorizados' }),
   );
 
+  const exportButton = ExportButton({
+    onExport: async (formato) => {
+      const usuario = SessionService.getCurrentUser();
+      const archivo = await ReportesService.exportarReporteMotorizados({
+        fechaDesde: currentParams.fechaDesde,
+        fechaHasta: currentParams.fechaHasta,
+        motorizadoId: currentParams.motorizadoId ? Number(currentParams.motorizadoId) : undefined,
+        formato,
+        generadoPor: usuario ? nombreCompleto(usuario) : 'Usuario desconocido',
+      });
+      downloadBlob(archivo.blob, archivo.filename);
+    },
+  });
+
   const container = el(
     'div',
     { className: 'flex flex-col gap-6' },
@@ -77,6 +96,7 @@ export function ReporteMotorizadosPage(): HTMLElement {
       title: 'Reporte de Productividad',
       description: 'Pedidos atendidos, entregas, incidentes y productividad por motorizado.',
       breadcrumb: [{ label: 'Reportes' }, { label: 'Productividad' }],
+      actions: exportButton,
     }),
     el('div', { className: 'flex justify-center py-6' }, Loader({ label: 'Cargando filtros' })),
   );
@@ -107,7 +127,7 @@ export function ReporteMotorizadosPage(): HTMLElement {
           placeholder: 'Todos los motorizados',
           options: motorizados.data.map((motorizado) => ({
             value: motorizado.id,
-            label: motorizado.placa,
+            label: formatMotorizado(motorizado),
           })),
         },
       ];
@@ -126,6 +146,7 @@ export function ReporteMotorizadosPage(): HTMLElement {
           title: 'Reporte de Productividad',
           description: 'Pedidos atendidos, entregas, incidentes y productividad por motorizado.',
           breadcrumb: [{ label: 'Reportes' }, { label: 'Productividad' }],
+          actions: exportButton,
         }),
         filtersHandle.element,
         kpiSlot,

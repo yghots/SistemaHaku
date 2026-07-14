@@ -1,3 +1,4 @@
+import type { FormatoExportacion } from './export';
 import type { EstadoMotorizado } from './perfil-motorizado';
 import type { EstadoPedido } from './pedido';
 
@@ -55,9 +56,11 @@ export const ESTADOS_REPORTE_ENTREGAS: EstadoPedido[] = [
   'reprogramado',
 ];
 
-/** Igual a ReporteMotorizadoItemDto. */
+/** Igual a ReporteMotorizadoItemDto (`nombres`/`apellidos` incorporados en la Fase 17). */
 export interface ReporteMotorizadoItem {
   motorizadoId: string;
+  nombres: string;
+  apellidos: string;
   placa: string;
   estado: EstadoMotorizado;
   pedidosAtendidos: number;
@@ -74,3 +77,23 @@ export interface ReporteMotorizadosParams {
   fechaDesde?: string;
   fechaHasta?: string;
 }
+
+/**
+ * Igual a los DTOs `Reporte*ExportQueryDto` (Fase 18): mismos filtros que
+ * su reporte visual homonimo sin `page`/`limit` (la exportacion siempre
+ * trae todas las filas), mas `formato`/`generadoPor`.
+ */
+export type ReportePedidosExportParams = Omit<ReportePedidosParams, 'page' | 'limit'> & {
+  formato: FormatoExportacion;
+  generadoPor: string;
+};
+
+export type ReporteEntregasExportParams = Omit<ReporteEntregasParams, 'page' | 'limit'> & {
+  formato: FormatoExportacion;
+  generadoPor: string;
+};
+
+export type ReporteMotorizadosExportParams = Omit<ReporteMotorizadosParams, 'page' | 'limit'> & {
+  formato: FormatoExportacion;
+  generadoPor: string;
+};

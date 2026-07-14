@@ -17,6 +17,8 @@ export interface UsuarioFormMode {
 }
 
 export interface UsuarioFormValues {
+  nombres: string;
+  apellidos: string;
   usuario: string;
   correo: string;
   /** Vacio en modo edicion significa "no cambiar la contraseña". */
@@ -36,6 +38,20 @@ export interface UsuarioFormHandle {
  * opcional la contraseña.
  */
 export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFormHandle {
+  const nombresField = Input({
+    name: 'nombres',
+    label: 'Nombres',
+    required: true,
+    value: initial?.nombres,
+  });
+
+  const apellidosField = Input({
+    name: 'apellidos',
+    label: 'Apellidos',
+    required: true,
+    value: initial?.apellidos,
+  });
+
   const usuarioField = Input({
     name: 'usuario',
     label: 'Usuario',
@@ -70,6 +86,8 @@ export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFor
   const element = el(
     'div',
     { className: 'flex flex-col gap-4' },
+    nombresField.wrapper,
+    apellidosField.wrapper,
     usuarioField.wrapper,
     correoField.wrapper,
     passwordField.wrapper,
@@ -77,16 +95,36 @@ export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFor
   );
 
   function validate(): UsuarioFormValues | null {
+    nombresField.setError(undefined);
+    apellidosField.setError(undefined);
     usuarioField.setError(undefined);
     correoField.setError(undefined);
     passwordField.setError(undefined);
 
+    const nombres = nombresField.input.value.trim();
+    const apellidos = apellidosField.input.value.trim();
     const usuario = usuarioField.input.value.trim();
     const correo = correoField.input.value.trim();
     const password = passwordField.input.value;
     const rol = rolField.select.value as UserRole;
 
     let valid = true;
+
+    if (!nombres) {
+      nombresField.setError('Este campo es obligatorio');
+      valid = false;
+    } else if (nombres.length > 100) {
+      nombresField.setError('Maximo 100 caracteres');
+      valid = false;
+    }
+
+    if (!apellidos) {
+      apellidosField.setError('Este campo es obligatorio');
+      valid = false;
+    } else if (apellidos.length > 100) {
+      apellidosField.setError('Maximo 100 caracteres');
+      valid = false;
+    }
 
     if (!usuario) {
       usuarioField.setError('Este campo es obligatorio');
@@ -116,7 +154,7 @@ export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFor
     }
 
     if (!valid) return null;
-    return { usuario, correo, password, rol };
+    return { nombres, apellidos, usuario, correo, password, rol };
   }
 
   return { element, validate };

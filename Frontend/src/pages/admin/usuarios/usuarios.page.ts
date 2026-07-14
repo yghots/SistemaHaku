@@ -15,11 +15,17 @@ import { UsuariosService } from '../../../services/usuarios.service';
 import { HttpError } from '../../../services/http/http-error';
 import type { ListUsuariosParams, Usuario } from '../../../types/usuario';
 import { el } from '../../../utils/dom';
+import { nombreCompleto } from '../../../utils/nombre-completo';
 import { buildUsuarioForm } from './usuario-form';
 
 /** Pagina de referencia para todos los modulos administrativos (CRUD completo sobre /usuarios). */
 export function UsuariosPage(): HTMLElement {
   const columns: DataTableColumn<Usuario>[] = [
+    {
+      key: 'nombres',
+      header: 'Nombre completo',
+      render: (row) => nombreCompleto(row),
+    },
     { key: 'usuario', header: 'Usuario' },
     { key: 'correo', header: 'Correo' },
     {
@@ -88,6 +94,8 @@ export function UsuariosPage(): HTMLElement {
       content: DetailList({
         fields: [
           { label: 'ID', value: usuario.id },
+          { label: 'Nombres', value: usuario.nombres },
+          { label: 'Apellidos', value: usuario.apellidos },
           { label: 'Usuario', value: usuario.usuario },
           { label: 'Correo', value: usuario.correo },
           { label: 'Rol', value: ROL_USUARIO_LABEL[usuario.rol] },
@@ -111,6 +119,8 @@ export function UsuariosPage(): HTMLElement {
         if (!values) return false;
         try {
           await UsuariosService.crear({
+            nombres: values.nombres,
+            apellidos: values.apellidos,
             usuario: values.usuario,
             correo: values.correo,
             password: values.password,
@@ -139,6 +149,8 @@ export function UsuariosPage(): HTMLElement {
         if (!values) return false;
         try {
           await UsuariosService.actualizar(usuario.id, {
+            nombres: values.nombres,
+            apellidos: values.apellidos,
             usuario: values.usuario,
             correo: values.correo,
             rol: values.rol,
@@ -159,7 +171,7 @@ export function UsuariosPage(): HTMLElement {
   async function handleToggleActive(usuario: Usuario, activate: boolean): Promise<void> {
     const confirmed = await confirmDialog({
       title: activate ? 'Activar usuario' : 'Desactivar usuario',
-      text: `¿Confirmas ${activate ? 'activar' : 'desactivar'} a "${usuario.usuario}"?`,
+      text: `¿Confirmas ${activate ? 'activar' : 'desactivar'} a "${nombreCompleto(usuario)}"?`,
       icon: 'question',
     });
     if (!confirmed) return;
@@ -180,7 +192,7 @@ export function UsuariosPage(): HTMLElement {
   async function handleDelete(usuario: Usuario): Promise<void> {
     const confirmed = await confirmDialog({
       title: 'Eliminar usuario',
-      text: `¿Confirmas eliminar a "${usuario.usuario}"? Esta accion no se puede deshacer.`,
+      text: `¿Confirmas eliminar a "${nombreCompleto(usuario)}"? Esta accion no se puede deshacer.`,
       icon: 'warning',
       danger: true,
       confirmText: 'Eliminar',

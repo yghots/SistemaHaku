@@ -1,5 +1,6 @@
 import { Ban, CheckCircle2, RotateCcw, Undo2 } from 'lucide';
 import { infoAlert } from '../../../components/alert/alert';
+import { ExportButton } from '../../../components/export-button/export-button';
 import { Loader } from '../../../components/loader/loader';
 import { PageHeader } from '../../../components/page-header/page-header';
 import {
@@ -14,10 +15,14 @@ import { ClientesService } from '../../../services/clientes.service';
 import { HttpError } from '../../../services/http/http-error';
 import { MotorizadosService } from '../../../services/motorizados.service';
 import { ReportesService } from '../../../services/reportes.service';
+import { SessionService } from '../../../services/session.service';
 import type { EstadoPedido } from '../../../types/pedido';
 import { ESTADOS_REPORTE_ENTREGAS } from '../../../types/reporte';
+import { downloadBlob } from '../../../utils/download-file';
 import { el } from '../../../utils/dom';
 import { fetchAllPages } from '../../../utils/fetch-all-pages';
+import { formatMotorizado } from '../../../utils/format-motorizado';
+import { nombreCompleto } from '../../../utils/nombre-completo';
 import { buildReportePedidoColumns } from './reporte-pedido-columns';
 
 const ESTADO_OPTIONS: SelectOption[] = ESTADOS_REPORTE_ENTREGAS.map((value) => ({
@@ -46,6 +51,20 @@ export function ReporteEntregasPage(): HTMLElement {
     Loader({ label: 'Cargando entregas' }),
   );
 
+  const exportButton = ExportButton({
+    onExport: async (formato) => {
+      const usuario = SessionService.getCurrentUser();
+      const archivo = await ReportesService.exportarReporteEntregas({
+        fechaDesde: currentParams.fechaDesde,
+        fechaHasta: currentParams.fechaHasta,
+        estado: (currentParams.estado as EstadoPedido) || undefined,
+        formato,
+        generadoPor: usuario ? nombreCompleto(usuario) : 'Usuario desconocido',
+      });
+      downloadBlob(archivo.blob, archivo.filename);
+    },
+  });
+
   const container = el(
     'div',
     { className: 'flex flex-col gap-6' },
@@ -54,6 +73,7 @@ export function ReporteEntregasPage(): HTMLElement {
       description:
         'Analiza los pedidos ya cerrados: entregados, cancelados, devueltos o reprogramados.',
       breadcrumb: [{ label: 'Reportes' }, { label: 'Entregas' }],
+      actions: exportButton,
     }),
     el('div', { className: 'flex justify-center py-6' }, Loader({ label: 'Cargando filtros' })),
   );
@@ -83,7 +103,7 @@ export function ReporteEntregasPage(): HTMLElement {
         clientes.data.map((cliente) => [cliente.id, cliente.nombreCompleto]),
       );
       motorizadoLabelById = new Map(
-        motorizados.data.map((motorizado) => [motorizado.id, motorizado.placa]),
+        motorizados.data.map((motorizado) => [motorizado.id, formatMotorizado(motorizado)]),
       );
 
       const fields: ReportFilterField[] = [
@@ -112,6 +132,7 @@ export function ReporteEntregasPage(): HTMLElement {
           description:
             'Analiza los pedidos ya cerrados: entregados, cancelados, devueltos o reprogramados.',
           breadcrumb: [{ label: 'Reportes' }, { label: 'Entregas' }],
+          actions: exportButton,
         }),
         filtersHandle.element,
         kpiSlot,

@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
-import { PerfilMotorizado, RolUsuario } from '@prisma/client';
+import { RolUsuario } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 import { assertFound } from '../../common/utils/assert-found.util';
 import {
@@ -12,7 +12,10 @@ import { ListPerfilesMotorizadosQueryDto } from './dto/list-perfiles-motorizados
 import { PerfilMotorizadoResponseDto } from './dto/perfil-motorizado-response.dto';
 import { UpdatePerfilMotorizadoDto } from './dto/update-perfil-motorizado.dto';
 import { PERFILES_MOTORIZADOS_REPOSITORY } from './interfaces/perfiles-motorizados-repository.interface';
-import type { IPerfilesMotorizadosRepository } from './interfaces/perfiles-motorizados-repository.interface';
+import type {
+  IPerfilesMotorizadosRepository,
+  PerfilMotorizadoConUsuario,
+} from './interfaces/perfiles-motorizados-repository.interface';
 import { PerfilesMotorizadosMapper } from './perfiles-motorizados.mapper';
 
 @Injectable()
@@ -119,7 +122,9 @@ export class PerfilesMotorizadosService {
     }
   }
 
-  private async obtenerPerfilOFallar(id: bigint): Promise<PerfilMotorizado> {
+  private async obtenerPerfilOFallar(
+    id: bigint,
+  ): Promise<PerfilMotorizadoConUsuario> {
     const perfil = await this.perfilesMotorizadosRepository.buscarPorId(id);
     return assertFound(perfil, 'Perfil de motorizado no encontrado');
   }

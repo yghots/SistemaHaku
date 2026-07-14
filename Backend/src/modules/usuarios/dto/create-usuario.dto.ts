@@ -10,6 +10,18 @@ import {
 import { RolUsuario } from '@prisma/client';
 
 export class CreateUsuarioDto {
+  @ApiProperty({ description: 'Nombres de la persona', maxLength: 100 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  nombres: string;
+
+  @ApiProperty({ description: 'Apellidos de la persona', maxLength: 100 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  apellidos: string;
+
   @ApiProperty({
     description: 'Nombre de usuario para iniciar sesion',
     maxLength: 50,

@@ -6,6 +6,7 @@ import { env } from '../../config/env';
 import { SessionService } from '../../services/session.service';
 import { el } from '../../utils/dom';
 import { logout } from '../../utils/logout';
+import { nombreCompleto } from '../../utils/nombre-completo';
 import type { LayoutHandle } from '../layout.types';
 
 const RIDER_NAV_ITEMS: SidebarNavItem[] = [
@@ -30,7 +31,7 @@ export function RiderLayout(): RiderLayoutHandle {
   });
   const navbar = Navbar({
     appName: env.appName,
-    userName: currentUser?.usuario ?? 'Motorizado',
+    userName: currentUser ? nombreCompleto(currentUser) : 'Motorizado',
     profileHref: '/rider/perfil',
     onLogout: logout,
     onMenuClick: () => sidebar.toggleDrawer(),

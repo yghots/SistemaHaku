@@ -26,11 +26,32 @@ httpClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
 httpClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<ApiErrorResponse>) => Promise.reject(normalizeError(error)),
+  async (error: AxiosError<ApiErrorResponse>) => Promise.reject(await normalizeError(error)),
 );
 
-function normalizeError(error: AxiosError<ApiErrorResponse>): HttpError {
-  const body = error.response?.data;
+/**
+ * Cuando la solicitud se hizo con `responseType: 'blob'` (descargas de
+ * exportacion, Fase 18), `error.response.data` llega como Blob en vez del
+ * JSON ya parseado — axios no sabe de antemano que una respuesta de error
+ * trae JSON aunque la exitosa sea binaria. Sin este paso, se perderia el
+ * mensaje real del backend y solo quedaria el mensaje generico de axios.
+ */
+async function resolveErrorBody(
+  error: AxiosError<ApiErrorResponse>,
+): Promise<ApiErrorResponse | undefined> {
+  const data = error.response?.data;
+  if (data instanceof Blob) {
+    try {
+      return JSON.parse(await data.text()) as ApiErrorResponse;
+    } catch {
+      return undefined;
+    }
+  }
+  return data;
+}
+
+async function normalizeError(error: AxiosError<ApiErrorResponse>): Promise<HttpError> {
+  const body = await resolveErrorBody(error);
 
   if (body) {
     const details = Array.isArray(body.message) ? body.message : undefined;

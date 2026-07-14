@@ -271,7 +271,26 @@ El módulo Usuarios (`src/pages/admin/usuarios/`) es la **implementación de ref
   - Al cerrar: llamar `restoreFocus(container, disparadorGuardado)`. Esta función **solo** devuelve el foco si `document.activeElement` todavía está dentro de `container` en ese momento — nunca robar el foco a algo que se haya abierto como consecuencia de la propia acción que cerró el panel (ej. un item de `Dropdown` cuyo `onSelect` abre un `Modal` antes de que el `Dropdown` termine de cerrarse).
 - **Componentes que reubican su panel a `document.body` (Portal, ver sección 18) son los que más necesitan esto**: al vivir fuera de su posición original en el DOM, el orden natural de `Tab` del navegador no los alcanza — sin gestión de foco explícita, quedan completamente inoperables por teclado.
 
-## 22. Referencias
+## 22. Nombre completo de una persona (Fase 16)
+
+- **`src/utils/nombre-completo.ts`** (`nombreCompleto({ nombres, apellidos })`): única función del proyecto que concatena `nombres`/`apellidos` de un `Usuario`. Cualquier pantalla que necesite mostrar el nombre completo de una persona debe reutilizar esta función — nunca concatenar esos dos campos a mano en un punto nuevo.
+- **Regla para decidir entre mostrar el nombre completo o el `usuario` (login)**: cuando la información mostrada está orientada a **identificar a la persona** (saludo/avatar del usuario autenticado en `Navbar`, encabezado de "Mi Perfil", confirmaciones de acciones sobre una cuenta ajena), usar `nombreCompleto`. Cuando está orientada a **autenticación o administración técnica de la cuenta** (el propio campo `usuario` como credencial de login, selectores que vinculan una cuenta existente a otro registro), mantener `usuario`. Ambos pueden coexistir en la misma pantalla (ej. la tabla de Usuarios muestra "Nombre completo" y "Usuario" como columnas separadas) — no es una sustitución, es una adición contextual.
+
+## 23. Representación de un motorizado (Fase 17)
+
+- **Regla permanente: los motorizados siempre deberán representarse mediante Nombre Completo + Placa. La placa nunca deberá utilizarse como único identificador visual para el usuario.**
+- **`src/utils/format-motorizado.ts`** (`formatMotorizado({ nombres, apellidos, placa })`): única función del proyecto que define esa representación ("Carlos Rojas · F8-0002"). Reutiliza `nombreCompleto` (sección 22) en vez de volver a concatenar `nombres`/`apellidos` — no duplicar esa lógica. Cualquier Select, columna de tabla o `DetailList` que muestre un motorizado debe reutilizar esta función.
+- **Excepción explícita, ya evaluada**: el CRUD propio de "Motorizados" (`pages/admin/motorizados/`), donde `placa` es un campo nativo del registro que se está administrando directamente (no una referencia a un motorizado desde otra pantalla), puede seguir mostrando `placa` como columna propia. La regla aplica a **toda pantalla que identifique a un motorizado desde otro contexto** (Pedidos, Reportes, Incidentes, Historial), no a la pantalla que edita sus propios datos.
+- **Dos líneas en vez de una**: si un componente futuro necesita partir la representación en dos líneas visuales, reutilizar `nombreCompleto(motorizado)` y `motorizado.placa` por separado — no crear una segunda función de formato.
+
+## 24. Exportación de reportes (Fase 18)
+
+- **`ExportButton`** (`src/components/export-button/export-button.ts`): único componente de "Exportar" del proyecto. Compone `Button` + `Dropdown` tal cual existen (nunca crear un botón por formato ni un Dropdown especial). Recibe una única prop, `onExport: (formato: FormatoExportacion) => Promise<void>`, y no conoce el reporte ni el endpoint — cualquier pantalla nueva que exponga exportación debe reutilizar este componente, nunca reimplementar el Dropdown de formatos.
+- **Los servicios de exportación solo devuelven `{ blob, filename }`, nunca descargan**: un método de servicio que llama a un endpoint `/export` (`responseType: 'blob'`) debe devolver `ArchivoDescargable` (`src/types/export.ts`) y dejar que quien lo llama invoque `downloadBlob` (`src/utils/download-file.ts`) — los servicios no manipulan el DOM (regla ya existente, sección 4).
+- **El nombre de archivo siempre se lee del header `Content-Disposition`** (`filenameFromContentDisposition`, `src/utils/download-file.ts`) — el frontend nunca genera ni inventa su propio nombre de archivo; el backend ya lo decide de forma determinista (título del reporte + timestamp).
+- **`responseType: 'blob'` en una request de axios puede traer un error como `Blob`, no como JSON**: `src/services/http/http-client.ts` ya lo resuelve (`resolveErrorBody`, Fase 18) parseando el `Blob` a texto/JSON antes de normalizar el `HttpError`. Cualquier nuevo servicio que use `responseType: 'blob'` no necesita repetir este manejo — ya está cubierto por el cliente HTTP central.
+
+## 25. Referencias
 
 - `Backend/API_OVERVIEW.md` — endpoints, casos de uso, flujo del negocio.
 - `Backend/ARCHITECTURE.md` — arquitectura y decisiones técnicas del backend.

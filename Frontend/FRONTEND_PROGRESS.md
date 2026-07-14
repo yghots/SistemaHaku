@@ -1423,3 +1423,232 @@ Ninguno bloqueante.
 instrucción explícita: no se buscan nuevos problemas ni se agregan
 mejoras adicionales más allá de los 4 hallazgos críticos de la
 auditoría.
+
+## Fase 16 — Incorporación de `nombres`/`apellidos` al modelo Usuario
+
+El backend agregó `nombres`/`apellidos` (obligatorios) a `Usuario`
+(ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 14). Esta fase adapta el
+frontend a ese contrato ya existente — no agrega funcionalidades ni
+modifica el flujo de login (`identificador` + `password`, sin cambios).
+
+### Utilidad nueva: una única fuente de verdad para el nombre completo
+
+`src/utils/nombre-completo.ts` (`nombreCompleto({ nombres, apellidos })`)
+es la **única** función del proyecto que concatena ambos campos.
+Reutilizada en los 4 puntos donde el frontend necesita mostrar el
+nombre completo de una persona — ninguno concatena `nombres`/`apellidos`
+a mano.
+
+### Regla aplicada para decidir dónde mostrar el nombre completo vs. el `usuario`
+
+Por cada pantalla que ya mostraba `usuario`, se evaluó el contexto antes
+de tocarla — nunca se reemplazó indiscriminadamente:
+
+| Pantalla                                                                                       | Contexto                                                                                                                                                                                                                                                                                     | Decisión                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Navbar` (avatar, menú de usuario, `aria-label`)                                               | Identifica a la persona que inició sesión                                                                                                                                                                                                                                                    | **Cambia** a `nombreCompleto` (vía `AdminLayout`/`RiderLayout`, que ahora pasan `userName: nombreCompleto(currentUser)` en vez de `currentUser.usuario`)                      |
+| `Mi Perfil` (encabezado con Avatar + nombre grande)                                            | Pantalla de la propia persona                                                                                                                                                                                                                                                                | **Cambia** a `nombreCompleto`; el campo `usuario` (login) se mantiene como campo de formulario aparte, sin eliminarse                                                         |
+| Tabla de **Usuarios** (admin)                                                                  | Listado de cuentas, pero de personas reales                                                                                                                                                                                                                                                  | **Se agrega** una columna "Nombre completo" (primera columna, ahora el título de la tarjeta móvil — Fase 13) sin quitar la columna "Usuario" (identificador técnico de login) |
+| Detalle/confirmaciones de **Usuarios** (`DetailList`, diálogos de activar/desactivar/eliminar) | Confirman una acción sobre una persona                                                                                                                                                                                                                                                       | **Cambia** a `nombreCompleto` en el texto de confirmación; el detalle sigue mostrando `Nombres`/`Apellidos`/`Usuario` por separado (vista técnica completa)                   |
+| Selector de cuenta en **Motorizados** (`usuario — correo`)                                     | Vincular una `PerfilMotorizado` a una cuenta de login existente — selección técnica/administrativa, no una pantalla de la lista explícita del brief                                                                                                                                          | **Sin cambios** — se revisó explícitamente y se decidió mantener, para no modificar nada fuera del alcance mínimo pedido                                                      |
+| Login                                                                                          | Solo pide `identificador`/`password`                                                                                                                                                                                                                                                         | **Sin cambios** (instrucción explícita)                                                                                                                                       |
+| Sidebar/Drawer                                                                                 | Solo enlaces de navegación, nunca mostró identidad del usuario                                                                                                                                                                                                                               | **Sin cambios** (revisado, no aplica)                                                                                                                                         |
+| Dashboard Admin/Rider, Reportes, Historial, Mis Pedidos                                        | Se revisaron explícitamente (`grep` de `currentUser`/`getCurrentUser` en todo `src/`): el usuario autenticado solo se usa para obtener su `id` (`usuarioId`/`creadoPorId`/`motorizadoId` en llamadas a la API) — ninguna de estas pantallas muestra el nombre del usuario actual en absoluto | **Sin cambios** (nada que adaptar)                                                                                                                                            |
+
+### Archivos modificados
+
+- `src/utils/nombre-completo.ts` (nuevo)
+- `src/types/usuario.ts` — `Usuario`, `CreateUsuarioPayload`, `UpdateUsuarioPayload` ganan `nombres`/`apellidos`
+- `src/types/auth.ts` — `AuthUser` gana `nombres`/`apellidos`
+- `src/services/profile.service.ts` — `ActualizarPerfilPayload` gana `nombres`/`apellidos`
+- `src/pages/admin/usuarios/usuario-form.ts` — campos Nombres/Apellidos (obligatorios, máx. 100), antes del campo Usuario
+- `src/pages/admin/usuarios/usuarios.page.ts` — columna "Nombre completo", detalle, textos de confirmación, payloads de crear/editar
+- `src/pages/profile/profile.page.ts` — campos Nombres/Apellidos en el formulario, encabezado con `nombreCompleto`
+- `src/layouts/admin/admin-layout.ts` / `src/layouts/rider/rider-layout.ts` — `userName` del `Navbar` ahora usa `nombreCompleto`
+
+**Sin cambios** (confirmado por revisión, no por omisión): `src/services/usuarios.service.ts`, `src/services/auth.service.ts`, `src/services/session.service.ts` (los tres son genéricos/tipados, heredan los campos nuevos sin tocar su lógica), `src/components/navbar/navbar.ts` (ya recibía `userName` por prop), `Sidebar`, `Dropdown`, `Modal`, `DataTable` (sin relación con este cambio), `login.page.ts`, todas las páginas de Dashboard/Reportes/Historial/Mis Pedidos.
+
+### Responsive
+
+Verificado por lectura de código: la nueva columna "Nombre completo" de
+la tabla de Usuarios hereda automáticamente el comportamiento de
+`DataTable` (Fase 13) — al ser ahora la primera columna con `header` no
+vacío, es el título de la tarjeta en la vista móvil (`< sm`), sin
+ningún cambio adicional. Los 2 campos nuevos de los formularios
+(Usuario y Mi Perfil) son `Input` estándar dentro de un `flex flex-col
+gap-4` ya existente — se apilan verticalmente igual que el resto de
+campos, sin requerir ajuste.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint .`, `npx prettier --check .` (sin
+  cambios de formato), `npm run build` — los cuatro sin errores.
+- Verificado contra el backend real: `POST /usuarios` con
+  `nombres`/`apellidos`, `POST /auth/register`, `POST /auth/login`
+  (respuesta incluye los campos nuevos), `PATCH /usuarios/:id` parcial —
+  ver detalle completo en `Backend/DEVELOPMENT_PROGRESS.md` Fase 14.
+- Regresión: `GET /reportes/*`, `GET /perfiles-motorizados` sin cambios.
+
+**Limitación de esta verificación**: no hay herramienta de
+automatización de navegador en este entorno — la interacción visual
+completa (formularios, tabla, Mi Perfil, Navbar, responsive) no se
+verificó visualmente por mí, solo por lectura exhaustiva del código y
+simulación de las llamadas HTTP subyacentes.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante. Nota esperada (no un problema): las cuentas de
+prueba existentes antes de esta fase muestran `"Pendiente Pendiente"`
+como nombre completo (valor de backfill de la migración) hasta que un
+administrador las edite con nombres reales vía Mi Perfil o el CRUD de
+Usuarios.
+
+## Fase 17 — Representación Unificada del Motorizado
+
+El backend extendió `PerfilMotorizadoResponseDto` y
+`ReporteMotorizadoItemDto` con `nombres`/`apellidos` (ver
+`Backend/DEVELOPMENT_PROGRESS.md`, Fase 15). Esta fase adapta el
+frontend para que ningún motorizado se identifique jamás únicamente por
+su placa — siempre "Nombre Completo · Placa". Ninguna funcionalidad
+nueva, ninguna lógica de negocio ni relación de datos modificada.
+
+### Utilidad compartida
+
+**`src/utils/format-motorizado.ts`** (`formatMotorizado(motorizado)`):
+única función del proyecto que define la representación de un
+motorizado. Reutiliza `nombreCompleto` (Fase 16, no duplica la
+concatenación de `nombres`/`apellidos`) y agrega `· placa`. Devuelve un
+string de una sola línea ("Carlos Rojas · F8-0002"), usado tal cual en
+Selects, columnas de `DataTable` y `DetailList`. Para un componente que
+necesite dos líneas, la recomendación (documentada en el propio archivo)
+es reutilizar `nombreCompleto(motorizado)` y `motorizado.placa` por
+separado en vez de crear una segunda función — no hizo falta en esta
+fase porque ningún componente actual necesitó esa variante.
+
+### Regla aplicada: dónde sí y dónde no
+
+Se revisó cada pantalla donde aparece un motorizado antes de tocarla:
+
+| Pantalla                                                                    | Antes                                            | Después                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pedidos: Select "Asignar/Reasignar motorizado"                              | `${placa} (${estado})`                           | `${formatMotorizado(motorizado)} (${estado})` — se conserva el estado operativo (disponible/ocupado/inactivo) porque ya era información útil para elegir a quién asignar, no se quita nada existente                                                                        |
+| Pedidos: detalle "Motorizado asignado"                                      | igual que el Select                              | igual que el Select (mismo mapa de labels)                                                                                                                                                                                                                                  |
+| Historial del Pedido (`PedidoHistorial`, compartido por Admin y Motorizado) | `#${motorizadoId}` (id crudo)                    | `formatMotorizado`, vía un resolver `motorizadoLabel` que el componente ahora exige como segundo parámetro obligatorio — cada llamador (Pedidos admin, Mis Pedidos, Historial del Motorizado) construye el suyo a partir de una lista de motorizados ya cargada             |
+| Reporte de Pedidos / Reporte de Entregas: columna "Motorizado" y filtro     | `placa`                                          | `formatMotorizado(motorizado)`                                                                                                                                                                                                                                              |
+| Reporte de Productividad: columna y filtro                                  | `placa`                                          | `formatMotorizado(row)` (la propia fila del reporte ya trae `nombres`/`apellidos`, sin fetch adicional)                                                                                                                                                                     |
+| Incidentes: columna "Motorizado" y detalle                                  | `#${motorizadoId}` (id crudo, ni siquiera placa) | `formatMotorizado`, vía una lista de motorizados cargada al montar la página (nueva, esta pantalla no tenía ninguna referencia previa)                                                                                                                                      |
+| Motorizados (CRUD propio del perfil)                                        | columnas separadas "Usuario"/"Placa"             | **Sin cambios** — la placa es un campo nativo del propio registro que se administra ahí (no es "identificar a un motorizado en otro contexto"); la columna "Usuario" ya fue una decisión explícita de la Fase 16 (contexto técnico/administrativo de vinculación de cuenta) |
+| Dashboard Admin/Rider, Mis Pedidos (rider)                                  | —                                                | **Sin cambios** — revisados explícitamente (`grep` de "motorizado" en ambos dashboards y en Mis Pedidos): ninguno muestra el nombre de un motorizado (Admin solo agrega un conteo `motorizadosActivos`; Rider siempre ve sus propios datos, nunca los de otro motorizado)   |
+
+### Archivos modificados
+
+- `src/utils/format-motorizado.ts` (nuevo)
+- `src/types/perfil-motorizado.ts`, `src/types/reporte.ts` — agregan `nombres`/`apellidos`
+- `src/pages/admin/pedidos/pedidos.page.ts`
+- `src/pages/admin/pedidos/pedido-historial.ts` — `PedidoHistorial` gana el parámetro obligatorio `motorizadoLabel`
+- `src/pages/rider/mis-pedidos/mis-pedidos.page.ts`, `src/pages/rider/historial/historial.page.ts` — agregan la carga de motorizados (ya cargaban clientes/sucursales/tiendas con el mismo patrón) para poder resolver `PedidoHistorial`
+- `src/pages/admin/reportes/reporte-pedidos.page.ts`, `reporte-entregas.page.ts`, `reporte-motorizados.page.ts`
+- `src/pages/admin/incidentes/incidentes.page.ts` — primera vez que esta página carga una lista de referencia (motorizados) al montar
+
+### Componentes reutilizados (sin crear ninguno nuevo)
+
+`DataTable`, `DetailList`, `ResourceTable`, `Select`, `Dropdown` (sin cambios, `RowActions` ya funciona igual), `FormModal`.
+
+### Responsive y Dark Mode
+
+Verificado por lectura de código: la cadena más larga ("Nombre Completo
+· Placa") se renderiza siempre dentro de celdas/`<option>`/`DetailList`
+que ya envuelven texto sin `whitespace-nowrap` ni truncado forzado — la
+vista de tarjeta móvil de `DataTable` (Fase 13) ya usa esta misma celda
+como título de tarjeta sin límite de ancho, así que el texto simplemente
+envuelve en una línea adicional en pantallas angostas, sin romper el
+layout. Ningún color ni clase `dark:` se tocó — no hay superficie nueva
+de dark mode que verificar.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint .`, `npx prettier --write .` (1 archivo
+  reformateado, sin cambio funcional), `npm run build` — los cuatro sin
+  errores.
+- Verificado contra el backend real: se asignaron nombres reales
+  ("Miguel Torres", "Carlos Rojas") a dos motorizados de prueba vía
+  `PATCH /usuarios/:id` y se confirmó que `GET /perfiles-motorizados` y
+  `GET /reportes/motorizados` reflejan el cambio de inmediato — ver
+  detalle en `Backend/DEVELOPMENT_PROGRESS.md` Fase 15.
+- Regresión: ningún consumidor existente de `PerfilMotorizado`/
+  `ReporteMotorizadoItem` se rompió (solo se agregaron campos a los
+  tipos).
+
+**Limitación de esta verificación**: no hay herramienta de
+automatización de navegador en este entorno — la verificación visual
+de Selects/tablas/detalle/responsive no se hizo de forma interactiva
+por mí, solo por lectura exhaustiva del código y de las respuestas
+reales del backend.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante.
+
+## Fase 18 — Infraestructura de Exportación de Reportes
+
+El backend agregó 3 endpoints nuevos (`GET /reportes/{pedidos,entregas,motorizados}/export`, ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 16) que devuelven el reporte ya generado en `xlsx`/`pdf`/`csv`/`json`/`xml`. Esta fase consume esos endpoints: un único botón "Exportar" (Dropdown de 5 formatos) reutilizado por los 3 reportes existentes — el frontend nunca genera el archivo, solo lo pide y lo descarga.
+
+### Componente nuevo
+
+**`src/components/export-button/export-button.ts`** (`ExportButton`): compone `Button` (trigger, icono `Download`, variante `outline`) + `Dropdown` (5 items, uno por formato) tal cual existen — no crea variantes nuevas de ninguno de los dos. Recibe una única prop, `onExport: (formato) => Promise<void>`, y no conoce el reporte, el endpoint ni el servicio que lo resuelve (SOLID: un componente de UI no llama a la API). Maneja su propio estado de carga (deshabilita el trigger mientras exporta, sin agregar un spinner — coherente con el resto del proyecto, donde ninguna acción disparada desde un item de `Dropdown` muestra un indicador de carga individual, ej. `RowActions` en Pedidos) y su propio manejo de error (`infoAlert`, mismo patrón que `showApiError` ya usado en las 3 páginas de reportes) y de éxito (`showSuccessToast`, mismo patrón que el resto de acciones mutables del proyecto).
+
+### Utilidades nuevas
+
+- **`src/utils/download-file.ts`**: `downloadBlob(blob, filename)` (crea un `<a>` temporal con `URL.createObjectURL`, dispara el click, libera el object URL) y `filenameFromContentDisposition(header, fallback)` (extrae el nombre de archivo del header `Content-Disposition` que arma el backend — el frontend nunca inventa su propio nombre de archivo).
+- **`src/types/export.ts`**: `FormatoExportacion` (igual al tipo homónimo del backend), `FORMATOS_EXPORTACION_OPTIONS` (las 5 opciones del Dropdown) y `ArchivoDescargable` (`{ blob, filename }`, lo que un servicio de exportación devuelve).
+- **`src/types/reporte.ts`** — se agregan `Reporte{Pedidos,Entregas,Motorizados}ExportParams` (`Omit<...Params, 'page' | 'limit'> & { formato, generadoPor }`), espejo exacto de los DTOs de exportación del backend.
+
+### `ReportesService` — 3 métodos nuevos
+
+`exportarReportePedidos`/`exportarReporteEntregas`/`exportarReporteMotorizados`: cada uno llama a su endpoint `/export` con `responseType: 'blob'` y devuelve `{ blob, filename }` (nunca dispara la descarga — "servicios nunca manipulan el DOM", regla de arquitectura ya existente). El nombre de archivo se lee siempre de `Content-Disposition` vía `filenameFromContentDisposition`.
+
+### Páginas modificadas
+
+`reporte-pedidos.page.ts`, `reporte-entregas.page.ts`, `reporte-motorizados.page.ts`: cada una construye un único `ExportButton` (una sola vez, no en cada re-render) y lo pasa al slot `actions` de `PageHeader` (ya existía, usado antes solo por Usuarios). El callback `onExport` de cada página arma los mismos parámetros de filtro que ya usa esa página para `fetchPage`/`fetchAllPages` (mismo objeto `currentParams` capturado por clausura — ningún filtro nuevo, ninguna lógica de filtro duplicada) más `formato` y `generadoPor` (`SessionService.getCurrentUser()` + `nombreCompleto`, mismo patrón de campo de auditoría ya establecido desde la Fase 7), llama al servicio, y descarga el resultado con `downloadBlob`.
+
+### Corrección necesaria en infraestructura compartida (no de negocio)
+
+- **`src/services/http/http-client.ts`**: el interceptor de errores asumía que `error.response.data` siempre era el JSON ya parseado del backend. Con `responseType: 'blob'` (introducido por primera vez en esta fase), una respuesta de error (ej. `400` por `formato` inválido) llega como `Blob`, no como objeto — sin corrección, el mensaje real del backend se perdía y solo quedaba el mensaje genérico de axios. Se agregó `resolveErrorBody()`, que detecta `data instanceof Blob` y lo parsea (`await blob.text()` + `JSON.parse`) antes de normalizar el `HttpError`. No cambia el comportamiento para ninguna solicitud JSON existente (el `Blob` nunca ocurre en ese caso).
+- **Backend — `main.ts`**: se agregó `exposedHeaders: ['Content-Disposition']` a `app.enableCors(...)` — sin esto, el navegador oculta ese header a JavaScript aunque viaje en la respuesta, y `filenameFromContentDisposition` no tendría nada que leer. Cambio de una línea, documentado también en `Backend/ARCHITECTURE.md` §7 y `Backend/DEVELOPMENT_PROGRESS.md` Fase 16.
+
+Ambos son correcciones de infraestructura estrictamente necesarias para que la funcionalidad pedida en esta fase funcione en un navegador real — no son cambios de arquitectura ni de reglas de negocio.
+
+### Componentes reutilizados (sin crear ninguno nuevo salvo `ExportButton`)
+
+`Button`, `Dropdown`, `PageHeader` (slot `actions`), `infoAlert`, `showSuccessToast`, `SessionService`, `nombreCompleto`.
+
+### Responsive y Dark Mode
+
+Verificado por lectura de código: `ExportButton` no introduce ninguna clase nueva de color/tamaño — es exactamente `Button` (`variant: 'outline'`, ya verificado en ambos temas desde la Fase 2) dentro de `Dropdown` (Portal a `document.body`, posicionamiento y foco ya verificados en las Fases 15/18-bugfix). El slot `actions` de `PageHeader` ya es responsive (`flex-wrap` en el contenedor, Fase 2/13) — un botón adicional simplemente se ajusta como cualquier otro `actions` existente (ej. "Nuevo usuario" en Usuarios).
+
+### Pruebas realizadas
+
+- Backend: `prisma validate`, `prisma generate`, `tsc --noEmit`, `npm run build`, `eslint`, `prettier`, `npm test` (unit), `npm run test:e2e` — sin errores. 15 combinaciones (3 reportes × 5 formatos) probadas contra el backend real corriendo en modo watch: `200`, `Content-Type`/`Content-Disposition` correctos, contenido verificado (JSON/XML reflejan filtros y total; CSV con BOM UTF-8 válido; XLSX releído con `exceljs` confirma estructura; PDF con magic bytes válidos; XML validado como bien formado). Casos de error (`formato` inválido, `generadoPor` faltante, `estado` inválido en Entregas) → `400` con mensaje correcto.
+- Frontend: `npx tsc --noEmit`, `npx eslint "src/**/*.ts"`, `npx prettier --check` (1 archivo reformateado sin cambio funcional), `npm run build` — los cuatro sin errores. Servidor de desarrollo (Vite) verificado activo y sirviendo la SPA sin errores de compilación tras los cambios.
+- Lógica de `filenameFromContentDisposition` verificada de forma aislada (Node) contra un header real devuelto por el backend.
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — la apertura real del Dropdown "Exportar", el click en cada formato, y la descarga efectiva del archivo en un navegador no se ejecutaron de forma interactiva por mí; la verificación se hizo por lectura exhaustiva del código (mismos componentes/patrones ya verificados visualmente en fases anteriores) y por pruebas funcionales directas contra el backend real (curl) que confirman que cada respuesta es exactamente lo que el navegador necesita para completar la descarga (headers correctos, contenido correcto).
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante. Las dos correcciones de infraestructura (interceptor de errores para blobs, CORS `exposedHeaders`) se identificaron y resolvieron durante esta misma fase, antes de que afectaran a ningún usuario real.

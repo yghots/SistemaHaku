@@ -36,6 +36,7 @@ import type { PaginatedResponse } from '../../../types/api';
 import type { Pedido } from '../../../types/pedido';
 import { el } from '../../../utils/dom';
 import { fetchAllPages } from '../../../utils/fetch-all-pages';
+import { formatMotorizado } from '../../../utils/format-motorizado';
 import { PedidoFotos } from '../../admin/pedidos/pedido-fotos';
 import { PedidoHistorial } from '../../admin/pedidos/pedido-historial';
 import { buildConfirmarEntregaForm } from './confirmar-entrega-form';
@@ -63,6 +64,7 @@ export function MisPedidosPage(): HTMLElement {
   let miMotorizadoId: string | null = null;
   let clienteLabelById = new Map<string, string>();
   let sucursalLabelById = new Map<string, string>();
+  let motorizadoLabelById = new Map<string, string>();
   let pedidosActivos: Pedido[] = [];
   let table: ResourceTableHandle | undefined;
 
@@ -112,10 +114,11 @@ export function MisPedidosPage(): HTMLElement {
       }
       miMotorizadoId = perfil.id;
 
-      const [clientes, sucursales, tiendas, todosPedidos] = await Promise.all([
+      const [clientes, sucursales, tiendas, motorizados, todosPedidos] = await Promise.all([
         ClientesService.listar({ page: 1, limit: 100 }),
         SucursalesService.listar({ page: 1, limit: 100 }),
         TiendasService.listar({ page: 1, limit: 100 }),
+        MotorizadosService.listar({ page: 1, limit: 100 }),
         fetchAllPages((params) => PedidosService.listar(params)),
       ]);
 
@@ -128,6 +131,9 @@ export function MisPedidosPage(): HTMLElement {
           sucursal.id,
           `${sucursal.nombre} — ${tiendaLabelById.get(sucursal.tiendaId) ?? sucursal.tiendaId}`,
         ]),
+      );
+      motorizadoLabelById = new Map(
+        motorizados.data.map((motorizado) => [motorizado.id, formatMotorizado(motorizado)]),
       );
 
       pedidosActivos = todosPedidos.filter(
@@ -156,6 +162,10 @@ export function MisPedidosPage(): HTMLElement {
 
   function sucursalLabel(sucursalId: string): string {
     return sucursalLabelById.get(sucursalId) ?? sucursalId;
+  }
+
+  function motorizadoLabel(motorizadoId: string): string {
+    return motorizadoLabelById.get(motorizadoId) ?? motorizadoId;
   }
 
   /** Simula la paginacion de un backend sobre el arreglo ya filtrado en memoria, para reutilizar ResourceTable tal cual. */
@@ -326,7 +336,7 @@ export function MisPedidosPage(): HTMLElement {
         PedidosService.obtenerHistorial(pedido.id, { page: 1, limit: 50 }),
         PedidosService.obtenerFotos(pedido.id, { page: 1, limit: 50 }),
       ]);
-      historialSlot.replaceWith(PedidoHistorial(historial.data));
+      historialSlot.replaceWith(PedidoHistorial(historial.data, motorizadoLabel));
       fotosSlot.replaceWith(PedidoFotos(fotos.data));
     } catch (error) {
       await showApiError(error);

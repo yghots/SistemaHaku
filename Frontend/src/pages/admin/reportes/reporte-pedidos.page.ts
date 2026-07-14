@@ -1,5 +1,6 @@
 import { Ban, CheckCircle2, Clock, Package } from 'lucide';
 import { infoAlert } from '../../../components/alert/alert';
+import { ExportButton } from '../../../components/export-button/export-button';
 import { Loader } from '../../../components/loader/loader';
 import { PageHeader } from '../../../components/page-header/page-header';
 import {
@@ -14,10 +15,14 @@ import { ClientesService } from '../../../services/clientes.service';
 import { HttpError } from '../../../services/http/http-error';
 import { MotorizadosService } from '../../../services/motorizados.service';
 import { ReportesService } from '../../../services/reportes.service';
+import { SessionService } from '../../../services/session.service';
 import { TiendasService } from '../../../services/tiendas.service';
 import type { EstadoPedido } from '../../../types/pedido';
+import { downloadBlob } from '../../../utils/download-file';
 import { el } from '../../../utils/dom';
 import { fetchAllPages } from '../../../utils/fetch-all-pages';
+import { formatMotorizado } from '../../../utils/format-motorizado';
+import { nombreCompleto } from '../../../utils/nombre-completo';
 import { buildReportePedidoColumns } from './reporte-pedido-columns';
 
 const ESTADO_OPTIONS: SelectOption[] = Object.entries(ESTADO_PEDIDO_LABEL).map(
@@ -45,6 +50,22 @@ export function ReportePedidosPage(): HTMLElement {
     Loader({ label: 'Cargando pedidos' }),
   );
 
+  const exportButton = ExportButton({
+    onExport: async (formato) => {
+      const usuario = SessionService.getCurrentUser();
+      const archivo = await ReportesService.exportarReportePedidos({
+        fechaDesde: currentParams.fechaDesde,
+        fechaHasta: currentParams.fechaHasta,
+        tiendaId: currentParams.tiendaId ? Number(currentParams.tiendaId) : undefined,
+        estado: (currentParams.estado as EstadoPedido) || undefined,
+        motorizadoId: currentParams.motorizadoId ? Number(currentParams.motorizadoId) : undefined,
+        formato,
+        generadoPor: usuario ? nombreCompleto(usuario) : 'Usuario desconocido',
+      });
+      downloadBlob(archivo.blob, archivo.filename);
+    },
+  });
+
   const container = el(
     'div',
     { className: 'flex flex-col gap-6' },
@@ -53,6 +74,7 @@ export function ReportePedidosPage(): HTMLElement {
       description:
         'Filtra y analiza los pedidos registrados por rango de fechas, tienda, estado o motorizado.',
       breadcrumb: [{ label: 'Reportes' }, { label: 'Pedidos' }],
+      actions: exportButton,
     }),
     el('div', { className: 'flex justify-center py-6' }, Loader({ label: 'Cargando filtros' })),
   );
@@ -82,7 +104,7 @@ export function ReportePedidosPage(): HTMLElement {
         clientes.data.map((cliente) => [cliente.id, cliente.nombreCompleto]),
       );
       motorizadoLabelById = new Map(
-        motorizados.data.map((motorizado) => [motorizado.id, motorizado.placa]),
+        motorizados.data.map((motorizado) => [motorizado.id, formatMotorizado(motorizado)]),
       );
 
       const fields: ReportFilterField[] = [
@@ -108,7 +130,7 @@ export function ReportePedidosPage(): HTMLElement {
           placeholder: 'Todos los motorizados',
           options: motorizados.data.map((motorizado) => ({
             value: motorizado.id,
-            label: motorizado.placa,
+            label: formatMotorizado(motorizado),
           })),
         },
       ];
@@ -128,6 +150,7 @@ export function ReportePedidosPage(): HTMLElement {
           description:
             'Filtra y analiza los pedidos registrados por rango de fechas, tienda, estado o motorizado.',
           breadcrumb: [{ label: 'Reportes' }, { label: 'Pedidos' }],
+          actions: exportButton,
         }),
         filtersHandle.element,
         kpiSlot,

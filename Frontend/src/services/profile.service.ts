@@ -3,6 +3,8 @@ import { UsuariosService } from './usuarios.service';
 import type { Usuario } from '../types/usuario';
 
 export interface ActualizarPerfilPayload {
+  nombres: string;
+  apellidos: string;
   usuario: string;
   correo: string;
 }
