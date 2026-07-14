@@ -1,6 +1,21 @@
-import { Pedido } from '@prisma/client';
+import { EstadoPedido, Pedido } from '@prisma/client';
 
 export const FLUJO_PEDIDO_REPOSITORY = Symbol('FLUJO_PEDIDO_REPOSITORY');
+
+// CU04 (Fase 10): estados activos desde los que se permite cancelar un
+// pedido. Decision aprobada explicitamente por el cliente (ver
+// DEVELOPMENT_PROGRESS.md, Fase 10): se puede cancelar en cualquier
+// momento anterior a la entrega. Los estados terminales (entregado,
+// cancelado, rechazado, devuelto, cliente_ausente, reprogramado) quedan
+// excluidos. Unica fuente de verdad (Fase 15): tanto el service (mensaje
+// de error legible) como el repository (condicion atomica del update)
+// importan esta misma constante en vez de mantener dos copias.
+export const ESTADOS_CANCELABLES: EstadoPedido[] = [
+  EstadoPedido.pendiente,
+  EstadoPedido.asignado,
+  EstadoPedido.recogido,
+  EstadoPedido.en_ruta,
+];
 
 export interface FotoEntregaInput {
   urlImagen: string;
@@ -35,6 +50,8 @@ export interface AsignarMotorizadoData {
 
 export interface ReasignarMotorizadoData {
   pedidoId: bigint;
+  /** Motorizado esperado como asignado actual del pedido (Fase 15): la condicion del update atomico se filtra tambien por este campo, para que dos reasignaciones concurrentes nunca puedan pisarse silenciosamente. */
+  motorizadoAnteriorId: bigint;
   motorizadoNuevoId: bigint;
   usuarioId: bigint;
 }

@@ -3,6 +3,7 @@ import { Icon } from '../icon/icon';
 import { cn } from '../../utils/cn';
 import { el } from '../../utils/dom';
 import { computeFloatingPosition } from '../../utils/floating-position';
+import { focusFirstElement, restoreFocus, trapTabKey } from '../../utils/focus-trap';
 
 export interface DropdownItem {
   label: string;
@@ -104,7 +105,11 @@ export function Dropdown(props: DropdownProps): DropdownHandle {
       className: cn(
         'fixed z-[60] hidden w-48 scale-95 rounded-lg border border-border-default bg-surface-elevated p-1 opacity-0 shadow-md',
         'transition-all duration-150 ease-out',
+        'focus:outline-none',
       ),
+      // Foco de respaldo (Fase 15) cuando el menu no tiene ningun item
+      // enfocable propio — ver `focusFirstElement`/`trapTabKey`.
+      tabindex: '-1',
     },
     ...menuItems,
   );
@@ -118,6 +123,9 @@ export function Dropdown(props: DropdownProps): DropdownHandle {
 
   let closeTimeout: number | undefined;
   let isOpen = false;
+  // Elemento que tenia el foco justo antes de abrir (Fase 15): a donde
+  // vuelve el foco al cerrar. Ver `restoreFocus` (utils/focus-trap.ts).
+  let previouslyFocused: HTMLElement | null = null;
 
   function setOrigin(openedUpward: boolean, alignedRight: boolean): void {
     panel.classList.remove(...Object.values(ORIGIN_CLASSES));
@@ -154,7 +162,11 @@ export function Dropdown(props: DropdownProps): DropdownHandle {
   }
 
   function handleKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') close();
+    if (event.key === 'Escape') {
+      close();
+      return;
+    }
+    trapTabKey(event, panel);
   }
 
   function open(): void {
@@ -165,6 +177,8 @@ export function Dropdown(props: DropdownProps): DropdownHandle {
     activeDropdownClose = close;
     isOpen = true;
     window.clearTimeout(closeTimeout);
+    previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     document.body.appendChild(panel);
     panel.classList.remove('hidden');
@@ -180,6 +194,7 @@ export function Dropdown(props: DropdownProps): DropdownHandle {
     document.addEventListener('keydown', handleKeydown);
     window.addEventListener('scroll', handleReposition, true);
     window.addEventListener('resize', handleReposition);
+    focusFirstElement(panel);
   }
 
   function close(): void {
@@ -194,6 +209,8 @@ export function Dropdown(props: DropdownProps): DropdownHandle {
     document.removeEventListener('keydown', handleKeydown);
     window.removeEventListener('scroll', handleReposition, true);
     window.removeEventListener('resize', handleReposition);
+    restoreFocus(panel, previouslyFocused);
+    previouslyFocused = null;
 
     closeTimeout = window.setTimeout(() => {
       panel.classList.add('hidden');

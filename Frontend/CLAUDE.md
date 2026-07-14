@@ -263,7 +263,15 @@ El módulo Usuarios (`src/pages/admin/usuarios/`) es la **implementación de ref
   - **Fila completa clicable** (ej. `Checkbox`, cuyo `<label>` es el área real de toque): `padding` vertical en el `<label>`, no en el control visual (`input[type=checkbox]` se mantiene en 16px).
 - **Safe Areas con `env(safe-area-inset-*)`, siempre combinado con `max()`/`calc()` sobre el padding ya existente, nunca reemplazándolo**: así el resultado en cualquier dispositivo sin notch (Desktop y la inmensa mayoría de móviles) es matemáticamente idéntico al valor anterior (`max(1rem, env(...))` = `1rem` cuando el inset es `0`). Requiere `viewport-fit=cover` en el `<meta viewport>` de `index.html` — sin ese flag, `env()` siempre vale `0` y las clases son no-op permanentes. Aplicar únicamente en elementos que tocan un borde real de la pantalla (headers, footers, Drawer, Modal a pantalla completa en mobile) — no en cada componente.
 
-## 21. Referencias
+## 21. Gestión de foco en componentes flotantes (Fase 15, corrección de auditoría)
+
+- **`src/utils/focus-trap.ts`** (`focusFirstElement`, `trapTabKey`, `restoreFocus`): utilidad única y obligatoria para cualquier componente que abra un panel/diálogo flotante con comportamiento propio de apertura/cierre (`Modal`, `Dropdown`, y cualquier componente similar futuro). Un componente flotante nuevo **debe** reutilizar estas tres funciones — no reimplementar gestión de foco a mano ni omitirla.
+  - Al abrir: guardar `document.activeElement` como disparador, y llamar `focusFirstElement(container)` para mover el foco al primer elemento enfocable del panel (o al propio `container`, que debe llevar `tabindex="-1"`, si no tiene ninguno).
+  - Mientras está abierto: el `keydown` que el componente ya mantiene para `Escape` debe delegar también en `trapTabKey(event, container)` — no agregar un listener nuevo, solo esa llamada adicional.
+  - Al cerrar: llamar `restoreFocus(container, disparadorGuardado)`. Esta función **solo** devuelve el foco si `document.activeElement` todavía está dentro de `container` en ese momento — nunca robar el foco a algo que se haya abierto como consecuencia de la propia acción que cerró el panel (ej. un item de `Dropdown` cuyo `onSelect` abre un `Modal` antes de que el `Dropdown` termine de cerrarse).
+- **Componentes que reubican su panel a `document.body` (Portal, ver sección 18) son los que más necesitan esto**: al vivir fuera de su posición original en el DOM, el orden natural de `Tab` del navegador no los alcanza — sin gestión de foco explícita, quedan completamente inoperables por teclado.
+
+## 22. Referencias
 
 - `Backend/API_OVERVIEW.md` — endpoints, casos de uso, flujo del negocio.
 - `Backend/ARCHITECTURE.md` — arquitectura y decisiones técnicas del backend.

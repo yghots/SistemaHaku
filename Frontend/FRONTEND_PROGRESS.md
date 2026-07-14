@@ -1305,3 +1305,121 @@ Ninguno bloqueante. Los 3 bugs de responsive preexistentes (`ReportFilters`, `To
 - Auditoría final: **no se inicia sin autorización explícita del usuario** (instrucción explícita del cierre de esta fase).
 
 **No se avanza a la auditoría final sin autorización explícita.**
+
+## Fase 15 — Corrección de Hallazgos Críticos de Auditoría
+
+Corrige exclusivamente el hallazgo C4 de `AUDIT_REPORT.md` (raíz del
+repositorio): `Modal` y `Dropdown` no gestionaban el foco en absoluto,
+bloqueando por completo la navegación por teclado en los flujos
+Crear/Editar/Eliminar de todo el proyecto. Ninguna funcionalidad nueva,
+ningún consumidor de `Modal`/`Dropdown` modificado.
+
+### Diagnóstico confirmado
+
+Ni `Modal.open()` ni `Dropdown.open()` movían el foco a su contenido,
+ni lo devolvían al disparador al cerrar, ni implementaban un focus
+trap. Ambos, además, reubican su panel como hijo directo de
+`document.body` al abrirse — así que, abierto por teclado, la
+siguiente pulsación de `Tab` no entraba al panel: continuaba desde la
+posición original del disparador en el DOM, saltándose por completo el
+contenido reubicado al final de `<body>`. Un usuario que navega solo
+con teclado no podía completar ningún flujo de Crear/Editar (`FormModal`)
+ni operar ninguna acción de fila (`RowActions`) sin retroceder
+manualmente con `Shift+Tab` desde el final de toda la página.
+
+### Corrección aplicada
+
+**`src/utils/focus-trap.ts`** (nuevo, reutilizado por ambos componentes
+— cero duplicación):
+
+- `focusFirstElement(container)`: mueve el foco al primer elemento
+  enfocable de `container` (o al propio `container`, con `tabindex="-1"`,
+  si no contiene ninguno). Se llama una vez al abrir.
+- `trapTabKey(event, container)`: si `Tab`/`Shift+Tab` está por sacar
+  el foco de `container`, lo redirige al primer/último elemento
+  enfocable — implementa el focus trap. Se invoca desde el `keydown`
+  que cada componente ya mantenía mientras está abierto (no se agregó
+  un listener nuevo, solo una línea más de manejo dentro del existente,
+  junto al `Escape` que ya cerraba el panel).
+- `restoreFocus(container, trigger)`: devuelve el foco a `trigger` al
+  cerrar — pero **únicamente si el foco todavía está dentro de
+  `container` en ese momento**. Esta guarda evita un bug de orden real
+  detectado durante el desarrollo: un item de `Dropdown` cuyo
+  `onSelect` abre un `Modal` (ej. "Editar" en `RowActions`) ejecuta
+  `onSelect()` antes de `close()` — para cuando `Dropdown.close()`
+  corre, el foco ya está dentro del `Modal` recién abierto, y sin esta
+  guarda `restoreFocus` se lo hubiera "robado" de vuelta al disparador
+  del `Dropdown` ya cerrado, detrás del modal.
+
+**`Modal`** (`src/components/modal/modal.ts`): el panel gana
+`tabindex="-1"` (foco de respaldo) y `focus:outline-none` (el navegador
+ya no dibuja un anillo de foco visible sobre todo el panel al recibir
+foco programático). `open()` guarda `document.activeElement` como
+disparador y llama `focusFirstElement(panel)`; `close()` llama
+`restoreFocus(panel, previouslyFocused)`. El `keydown` existente
+(que ya manejaba `Escape`) ahora también delega en `trapTabKey`.
+
+**`Dropdown`** (`src/components/dropdown/dropdown.ts`): mismo patrón
+exacto — `tabindex="-1"` + `focus:outline-none` en el panel, disparador
+guardado en `open()`, `focusFirstElement`/`restoreFocus`/`trapTabKey`
+en los mismos puntos. El Portal a `document.body`, el posicionamiento
+inteligente (`computeFloatingPosition`), el registro de "un único
+Dropdown abierto a la vez" (`activeDropdownClose`), el responsive y el
+dark mode no se tocaron — la corrección es exclusivamente de foco.
+
+### Por qué se beneficia todo el proyecto sin tocar consumidores
+
+`FormModal`, `RowActions`, el menú de usuario del `Navbar`, y cualquier
+otro punto que ya construye un `Modal`/`Dropdown` heredan la corrección
+automáticamente: la API pública (props, `ModalHandle`/`DropdownHandle`)
+no cambió. Cero archivos de página o de otro componente modificados.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint .`, `npx prettier --check .`,
+  `npm run build` — los cuatro sin errores.
+- Revisión manual del flujo de foco trazando el código (no hay
+  automatización de navegador en este entorno): abrir un `FormModal`
+  desde un botón de la página → foco inicial cae en el botón "Cerrar"
+  (primer elemento enfocable en el DOM del panel, comportamiento base
+  recomendado por WAI-ARIA APG cuando no hay un campo obviamente
+  primario) → `Tab` recorre los campos del formulario y el
+  footer → `Tab` desde el último botón del footer vuelve al primero
+  (`Cerrar`) → `Shift+Tab` desde `Cerrar` va al último → `Escape`
+  cierra y devuelve el foco exactamente al botón que abrió el modal.
+  Mismo trazado para `Dropdown` (ej. `RowActions` de cualquier listado):
+  abrir con teclado enfoca el primer ítem del menú, `Tab`/`Shift+Tab`
+  quedan atrapados dentro del menú, `Escape` cierra y devuelve el foco
+  al botón de acciones (⋮) de esa fila.
+- Caso de la guarda de `restoreFocus` verificado por lectura: en
+  `RowActions`, "Editar" ejecuta `onSelect()` (que abre un `FormModal`)
+  antes de que `Dropdown.close()` corra — confirmado que, en ese
+  momento, el foco ya está dentro del nuevo `Modal` y `restoreFocus`
+  del `Dropdown` correctamente no interviene (su propio `container` ya
+  no contiene `document.activeElement`).
+- No-regresión verificada por lectura de los consumidores existentes
+  (ninguno modificado): `FormModal` (Crear/Editar en los 6+ módulos
+  administrativos), `RowActions` en cada listado, menú de usuario del
+  `Navbar`, `Sidebar`/Drawer (que usa `Tooltip`, no `Dropdown` — sin
+  relación con este cambio), Dashboards, Responsive (Fase 13, sin
+  tocar), Dark Mode (clases `dark:` no modificadas).
+
+**Limitación de esta verificación**: no hay herramienta de
+automatización de navegador en este entorno — la verificación de
+`Tab`/`Shift+Tab`/`Escape` reales con un lector de pantalla no se hizo
+de forma interactiva por mí. Se recomienda al usuario una prueba manual
+de teclado antes de dar el hallazgo por definitivamente cerrado.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante.
+
+**El proyecto se da por finalizado al cerrar esta fase**, según
+instrucción explícita: no se buscan nuevos problemas ni se agregan
+mejoras adicionales más allá de los 4 hallazgos críticos de la
+auditoría.

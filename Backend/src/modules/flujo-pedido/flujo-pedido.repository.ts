@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   EstadoPedido,
   Pedido,
@@ -12,6 +12,7 @@ import {
   CancelarPedidoData,
   ConfirmarEntregaData,
   ConfirmarRecojoData,
+  ESTADOS_CANCELABLES,
   IFlujoPedidoRepository,
   IniciarRutaData,
   ReasignarMotorizadoData,
@@ -33,10 +34,13 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   confirmarRecojo(data: ConfirmarRecojoData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedido.update({
-        where: { id: data.pedidoId },
-        data: { estado: EstadoPedido.recogido },
-      });
+      const pedido = await this.actualizarPedidoCondicional(
+        tx,
+        data.pedidoId,
+        { estado: EstadoPedido.asignado },
+        { estado: EstadoPedido.recogido },
+        'No se pudo confirmar el recojo: el pedido cambio de estado antes de completar la operacion',
+      );
 
       await tx.fotoEntrega.create({
         data: {
@@ -61,10 +65,13 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   iniciarRuta(data: IniciarRutaData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedido.update({
-        where: { id: data.pedidoId },
-        data: { estado: EstadoPedido.en_ruta },
-      });
+      const pedido = await this.actualizarPedidoCondicional(
+        tx,
+        data.pedidoId,
+        { estado: EstadoPedido.recogido },
+        { estado: EstadoPedido.en_ruta },
+        'No se pudo iniciar la ruta: el pedido cambio de estado antes de completar la operacion',
+      );
 
       await this.crearEventoHistorial(tx, {
         pedidoId: data.pedidoId,
@@ -79,15 +86,18 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   confirmarEntrega(data: ConfirmarEntregaData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedido.update({
-        where: { id: data.pedidoId },
-        data: {
+      const pedido = await this.actualizarPedidoCondicional(
+        tx,
+        data.pedidoId,
+        { estado: EstadoPedido.en_ruta },
+        {
           estado: EstadoPedido.entregado,
           ...(data.observaciones !== undefined
             ? { observaciones: data.observaciones }
             : {}),
         },
-      });
+        'No se pudo confirmar la entrega: el pedido cambio de estado antes de completar la operacion',
+      );
 
       if (data.fotos.length > 0) {
         await tx.fotoEntrega.createMany({
@@ -114,13 +124,16 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   asignarMotorizado(data: AsignarMotorizadoData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedido.update({
-        where: { id: data.pedidoId },
-        data: {
+      const pedido = await this.actualizarPedidoCondicional(
+        tx,
+        data.pedidoId,
+        { estado: EstadoPedido.pendiente },
+        {
           motorizadoActualId: data.motorizadoId,
           estado: EstadoPedido.asignado,
         },
-      });
+        'No se pudo asignar el motorizado: el pedido cambio de estado antes de completar la operacion',
+      );
 
       await this.crearEventoHistorial(tx, {
         pedidoId: data.pedidoId,
@@ -135,10 +148,19 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   reasignarMotorizado(data: ReasignarMotorizadoData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedido.update({
-        where: { id: data.pedidoId },
-        data: { motorizadoActualId: data.motorizadoNuevoId },
-      });
+      // A diferencia de las demas transiciones, reasignarMotorizado no
+      // valida el estado del pedido (inconsistencia real ya documentada y
+      // dejada abierta a proposito, ver AUDIT_REPORT.md/DEVELOPMENT_PROGRESS.md
+      // Fase 11/12) — la condicion atomica preserva exactamente esa misma
+      // semantica: solo exige que el motorizado actual siga siendo el
+      // esperado, nunca un estado en particular.
+      const pedido = await this.actualizarPedidoCondicional(
+        tx,
+        data.pedidoId,
+        { motorizadoActualId: data.motorizadoAnteriorId },
+        { motorizadoActualId: data.motorizadoNuevoId },
+        'El motorizado anterior no coincide con el motorizado asignado al pedido',
+      );
 
       await this.crearEventoHistorial(tx, {
         pedidoId: data.pedidoId,
@@ -153,10 +175,13 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   registrarClienteAusente(data: RegistrarClienteAusenteData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedido.update({
-        where: { id: data.pedidoId },
-        data: { estado: EstadoPedido.cliente_ausente },
-      });
+      const pedido = await this.actualizarPedidoCondicional(
+        tx,
+        data.pedidoId,
+        { estado: EstadoPedido.en_ruta },
+        { estado: EstadoPedido.cliente_ausente },
+        'No se pudo registrar cliente ausente: el pedido cambio de estado antes de completar la operacion',
+      );
 
       await this.crearEventoHistorial(tx, {
         pedidoId: data.pedidoId,
@@ -171,10 +196,13 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   registrarRechazo(data: RegistrarRechazoData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedido.update({
-        where: { id: data.pedidoId },
-        data: { estado: EstadoPedido.rechazado },
-      });
+      const pedido = await this.actualizarPedidoCondicional(
+        tx,
+        data.pedidoId,
+        { estado: EstadoPedido.en_ruta },
+        { estado: EstadoPedido.rechazado },
+        'No se pudo registrar el rechazo: el pedido cambio de estado antes de completar la operacion',
+      );
 
       await this.crearEventoHistorial(tx, {
         pedidoId: data.pedidoId,
@@ -189,10 +217,13 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   cancelarPedido(data: CancelarPedidoData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      const pedido = await tx.pedido.update({
-        where: { id: data.pedidoId },
-        data: { estado: EstadoPedido.cancelado },
-      });
+      const pedido = await this.actualizarPedidoCondicional(
+        tx,
+        data.pedidoId,
+        { estado: { in: ESTADOS_CANCELABLES } },
+        { estado: EstadoPedido.cancelado },
+        'No se pudo cancelar el pedido: su estado cambio antes de completar la operacion',
+      );
 
       await this.crearEventoHistorial(tx, {
         pedidoId: data.pedidoId,
@@ -203,6 +234,46 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
       return pedido;
     });
+  }
+
+  /**
+   * Nucleo de la correccion de la Fase 15 (condicion de carrera, ver
+   * AUDIT_REPORT.md C1): actualiza el pedido con `updateMany` filtrando
+   * simultaneamente por `id` y por la precondicion de negocio de cada
+   * transicion (estado esperado, o motorizado actual esperado en el caso
+   * de `reasignarMotorizado`). MySQL/InnoDB bloquea la fila coincidente y
+   * reevalua el `WHERE` contra el valor ya comprometido — si otra
+   * transaccion ya cambio esa precondicion, `count` es 0 aqui y se
+   * responde 409 sin haber escrito nada (ni fotos ni historial), en vez
+   * de la lectura-luego-escritura separada que permitia dos transiciones
+   * validas simultaneas sobre el mismo pedido. No hace falta bloqueo
+   * explicito (`SELECT ... FOR UPDATE`) ni una columna de version: el
+   * propio `UPDATE ... WHERE` condicionado ya es atomico a nivel de fila.
+   * Reutilizado por los 8 casos de uso de este repositorio — ninguno
+   * repite esta logica.
+   */
+  private async actualizarPedidoCondicional(
+    tx: Prisma.TransactionClient,
+    pedidoId: bigint,
+    precondicion: Prisma.PedidoWhereInput,
+    // "Unchecked" (no "Checked"): necesario para poder escribir
+    // `motorizadoActualId` como escalar plano — el tipo "checked" lo
+    // excluye por respaldar una relacion (`motorizadoActual`), igual que
+    // ya ocurria implicitamente con el `tx.pedido.update` anterior a esta
+    // correccion.
+    data: Prisma.PedidoUncheckedUpdateManyInput,
+    mensajeConflicto: string,
+  ): Promise<Pedido> {
+    const { count } = await tx.pedido.updateMany({
+      where: { id: pedidoId, ...precondicion },
+      data,
+    });
+
+    if (count === 0) {
+      throw new ConflictException(mensajeConflicto);
+    }
+
+    return tx.pedido.findUniqueOrThrow({ where: { id: pedidoId } });
   }
 
   // Los 8 casos de uso de esta clase terminan con la misma escritura a

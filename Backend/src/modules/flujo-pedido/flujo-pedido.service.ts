@@ -14,21 +14,11 @@ import { IniciarRutaDto } from './dto/iniciar-ruta.dto';
 import { ReasignarMotorizadoDto } from './dto/reasignar-motorizado.dto';
 import { RegistrarClienteAusenteDto } from './dto/registrar-cliente-ausente.dto';
 import { RegistrarRechazoDto } from './dto/registrar-rechazo.dto';
-import { FLUJO_PEDIDO_REPOSITORY } from './interfaces/flujo-pedido-repository.interface';
+import {
+  ESTADOS_CANCELABLES,
+  FLUJO_PEDIDO_REPOSITORY,
+} from './interfaces/flujo-pedido-repository.interface';
 import type { IFlujoPedidoRepository } from './interfaces/flujo-pedido-repository.interface';
-
-// CU04 (Fase 10): estados activos desde los que se permite cancelar un
-// pedido. Decision aprobada explicitamente por el cliente (ver
-// DEVELOPMENT_PROGRESS.md, Fase 10): se puede cancelar en cualquier
-// momento anterior a la entrega. Los estados terminales (entregado,
-// cancelado, rechazado, devuelto, cliente_ausente, reprogramado) quedan
-// excluidos.
-const ESTADOS_CANCELABLES: EstadoPedido[] = [
-  EstadoPedido.pendiente,
-  EstadoPedido.asignado,
-  EstadoPedido.recogido,
-  EstadoPedido.en_ruta,
-];
 
 @Injectable()
 export class FlujoPedidoService {
@@ -151,6 +141,7 @@ export class FlujoPedidoService {
 
     const actualizado = await this.flujoPedidoRepository.reasignarMotorizado({
       pedidoId,
+      motorizadoAnteriorId: BigInt(dto.motorizadoAnteriorId),
       motorizadoNuevoId: BigInt(motorizadoNuevo.id),
       usuarioId: BigInt(dto.usuarioId),
     });

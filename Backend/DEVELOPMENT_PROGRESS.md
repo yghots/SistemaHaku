@@ -99,17 +99,17 @@ una línea explicando su propósito futuro.
 
 1. **La base de datos `delivery_system` ya existente en el contenedor Docker
    tiene un esquema legado** (`tablas: asignaciones, clientes, estados,
-   historial_estados, pedidos, repartidores, usuarios`) que **no coincide**
+historial_estados, pedidos, repartidores, usuarios`) que **no coincide**
    con el modelo de 9 tablas del ER actual (`usuarios, tiendas, sucursales,
-   clientes, perfiles_motorizados, pedidos, historial_pedido,
-   fotos_entrega, incidentes`). Antes de correr la primera migración de
+clientes, perfiles_motorizados, pedidos, historial_pedido,
+fotos_entrega, incidentes`). Antes de correr la primera migración de
    Prisma en Fase 2 hay que decidir: recrear la base de datos desde cero,
    o migrar/descartar los datos existentes.
 2. El documento funcional dice "el modelo final quedó compuesto por 8
    tablas", pero tanto el documento como el diagrama ER detallan **9**
    entidades (`USUARIOS, TIENDAS, SUCURSALES, CLIENTES,
-   PERFILES_MOTORIZADOS, PEDIDOS, HISTORIAL_PEDIDO, FOTOS_ENTREGA,
-   INCIDENTES`). Aparente error de conteo en la documentación, no afecta el
+PERFILES_MOTORIZADOS, PEDIDOS, HISTORIAL_PEDIDO, FOTOS_ENTREGA,
+INCIDENTES`). Aparente error de conteo en la documentación, no afecta el
    modelo en sí.
 3. El campo `password_hash` en `USUARIOS` está marcado como "NUEVO" en el
    diagrama pero no aparece descrito en el detalle de tablas del documento
@@ -189,7 +189,7 @@ el diseño aprobado; se presentaron con alternativas y quedaron resueltos así:
 
 1. **`PEDIDOS` no tenía columna de fecha de creación**, pero CU18 exige
    "filtros por fecha" en los reportes → se agregó `creadoEn DateTime
-   @default(now())` (`creado_en`), indexado.
+@default(now())` (`creado_en`), indexado.
 2. **CU10 exige registrar "observaciones" al confirmar la entrega**, pero
    ninguna de las 9 tablas tenía un campo para eso → se agregó
    `observaciones String?` a `PEDIDOS`.
@@ -227,17 +227,17 @@ en el chat):
 9 tablas, generador `prisma-client-js` (heredado de la Fase 1), sin `output`
 personalizado:
 
-| Tabla | PK | FKs | Notas |
-|---|---|---|---|
-| `usuarios` | id | — | `usuario` y `correo` únicos; `password_hash`; enum `rol` |
-| `tiendas` | id | — | soft delete |
-| `sucursales` | id | `tienda_id` → tiendas (Restrict) | soft delete (agregado) |
-| `clientes` | id | — | soft delete |
-| `perfiles_motorizados` | id | `usuario_id` → usuarios (Restrict, único = 1-1) | enum `estado` |
-| `pedidos` | id | `sucursal_id`, `cliente_id` → Restrict; `motorizado_actual_id` → SetNull; `creado_por_id` → Restrict | `codigo_pedido` único; enum `estado`; `creado_en` y `observaciones` agregados |
-| `historial_pedido` | id | `pedido_id`, `usuario_id` → Restrict; `motorizado_id` → SetNull | `tipo_evento` discrimina uso de `estado` vs `motorizado_id` |
-| `fotos_entrega` | id | `pedido_id`, `motorizado_id` → Restrict | enum `tipo` (recojo/entrega) |
-| `incidentes` | id | `motorizado_id` → Restrict; `pedido_id` → SetNull (opcional, "si aplica") | enum `tipo` |
+| Tabla                  | PK  | FKs                                                                                                  | Notas                                                                         |
+| ---------------------- | --- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `usuarios`             | id  | —                                                                                                    | `usuario` y `correo` únicos; `password_hash`; enum `rol`                      |
+| `tiendas`              | id  | —                                                                                                    | soft delete                                                                   |
+| `sucursales`           | id  | `tienda_id` → tiendas (Restrict)                                                                     | soft delete (agregado)                                                        |
+| `clientes`             | id  | —                                                                                                    | soft delete                                                                   |
+| `perfiles_motorizados` | id  | `usuario_id` → usuarios (Restrict, único = 1-1)                                                      | enum `estado`                                                                 |
+| `pedidos`              | id  | `sucursal_id`, `cliente_id` → Restrict; `motorizado_actual_id` → SetNull; `creado_por_id` → Restrict | `codigo_pedido` único; enum `estado`; `creado_en` y `observaciones` agregados |
+| `historial_pedido`     | id  | `pedido_id`, `usuario_id` → Restrict; `motorizado_id` → SetNull                                      | `tipo_evento` discrimina uso de `estado` vs `motorizado_id`                   |
+| `fotos_entrega`        | id  | `pedido_id`, `motorizado_id` → Restrict                                                              | enum `tipo` (recojo/entrega)                                                  |
+| `incidentes`           | id  | `motorizado_id` → Restrict; `pedido_id` → SetNull (opcional, "si aplica")                            | enum `tipo`                                                                   |
 
 Enums: `RolUsuario`, `EstadoMotorizado`, `EstadoPedido` (10 valores: flujo
 principal + 5 alternativos), `TipoEventoHistorial`, `TipoFoto`,
@@ -365,17 +365,17 @@ lógica de negocio en los controllers.
 
 ### Endpoints implementados
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| POST | `/api/v1/usuarios` | Crear usuario (admin o motorizado) |
-| GET | `/api/v1/usuarios` | Listar con paginación + filtro por `usuario`/`correo` |
-| GET | `/api/v1/usuarios/:id` | Buscar por id |
-| PATCH | `/api/v1/usuarios/:id` | Actualizar (password solo si se envía) |
-| PATCH | `/api/v1/usuarios/:id/activar` | Activar cuenta |
-| PATCH | `/api/v1/usuarios/:id/desactivar` | Desactivar cuenta |
-| DELETE | `/api/v1/usuarios/:id` | Eliminación lógica (`deletedAt`) |
-| POST | `/api/v1/auth/register` | Autorregistro público (siempre `rol=motorizado`) |
-| POST | `/api/v1/auth/login` | Login con `usuario` o `correo` + password |
+| Método | Ruta                              | Descripción                                           |
+| ------ | --------------------------------- | ----------------------------------------------------- |
+| POST   | `/api/v1/usuarios`                | Crear usuario (admin o motorizado)                    |
+| GET    | `/api/v1/usuarios`                | Listar con paginación + filtro por `usuario`/`correo` |
+| GET    | `/api/v1/usuarios/:id`            | Buscar por id                                         |
+| PATCH  | `/api/v1/usuarios/:id`            | Actualizar (password solo si se envía)                |
+| PATCH  | `/api/v1/usuarios/:id/activar`    | Activar cuenta                                        |
+| PATCH  | `/api/v1/usuarios/:id/desactivar` | Desactivar cuenta                                     |
+| DELETE | `/api/v1/usuarios/:id`            | Eliminación lógica (`deletedAt`)                      |
+| POST   | `/api/v1/auth/register`           | Autorregistro público (siempre `rol=motorizado`)      |
+| POST   | `/api/v1/auth/login`              | Login con `usuario` o `correo` + password             |
 
 Todos documentados en Swagger (`/api/docs`), agrupados en los tags
 `Usuarios` y `Auth`.
@@ -545,20 +545,20 @@ eliminada" (DRY).
 
 ### Endpoints implementados
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| POST | `/api/v1/tiendas` | Crear tienda |
-| GET | `/api/v1/tiendas` | Listar con paginación + búsqueda por nombre |
-| GET | `/api/v1/tiendas/:id` | Buscar por id |
-| PATCH | `/api/v1/tiendas/:id` | Actualizar |
-| PATCH | `/api/v1/tiendas/:id/activar` | Activar |
-| PATCH | `/api/v1/tiendas/:id/desactivar` | Desactivar |
-| DELETE | `/api/v1/tiendas/:id` | Eliminación lógica |
-| POST | `/api/v1/sucursales` | Crear sucursal (valida tienda existente y activa) |
-| GET | `/api/v1/sucursales` | Listar con paginación + filtro `tiendaId` + búsqueda por nombre |
-| GET | `/api/v1/sucursales/:id` | Buscar por id |
-| PATCH | `/api/v1/sucursales/:id` | Actualizar |
-| DELETE | `/api/v1/sucursales/:id` | Eliminación lógica |
+| Método | Ruta                             | Descripción                                                     |
+| ------ | -------------------------------- | --------------------------------------------------------------- |
+| POST   | `/api/v1/tiendas`                | Crear tienda                                                    |
+| GET    | `/api/v1/tiendas`                | Listar con paginación + búsqueda por nombre                     |
+| GET    | `/api/v1/tiendas/:id`            | Buscar por id                                                   |
+| PATCH  | `/api/v1/tiendas/:id`            | Actualizar                                                      |
+| PATCH  | `/api/v1/tiendas/:id/activar`    | Activar                                                         |
+| PATCH  | `/api/v1/tiendas/:id/desactivar` | Desactivar                                                      |
+| DELETE | `/api/v1/tiendas/:id`            | Eliminación lógica                                              |
+| POST   | `/api/v1/sucursales`             | Crear sucursal (valida tienda existente y activa)               |
+| GET    | `/api/v1/sucursales`             | Listar con paginación + filtro `tiendaId` + búsqueda por nombre |
+| GET    | `/api/v1/sucursales/:id`         | Buscar por id                                                   |
+| PATCH  | `/api/v1/sucursales/:id`         | Actualizar                                                      |
+| DELETE | `/api/v1/sucursales/:id`         | Eliminación lógica                                              |
 
 Todos documentados en Swagger, agrupados en los tags `Tiendas` y
 `Sucursales`.
@@ -687,13 +687,13 @@ porque el modelo de `Cliente` (Fase 2) no tiene ese campo — solo
 
 ### Endpoints implementados
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| POST | `/api/v1/clientes` | Crear cliente |
-| GET | `/api/v1/clientes` | Listar con paginación + búsqueda por nombre/telefono/documento |
-| GET | `/api/v1/clientes/:id` | Buscar por id |
-| PATCH | `/api/v1/clientes/:id` | Actualizar |
-| DELETE | `/api/v1/clientes/:id` | Eliminación lógica (`deletedAt`) |
+| Método | Ruta                   | Descripción                                                    |
+| ------ | ---------------------- | -------------------------------------------------------------- |
+| POST   | `/api/v1/clientes`     | Crear cliente                                                  |
+| GET    | `/api/v1/clientes`     | Listar con paginación + búsqueda por nombre/telefono/documento |
+| GET    | `/api/v1/clientes/:id` | Buscar por id                                                  |
+| PATCH  | `/api/v1/clientes/:id` | Actualizar                                                     |
+| DELETE | `/api/v1/clientes/:id` | Eliminación lógica (`deletedAt`)                               |
 
 Documentado en Swagger, tag `Clientes`.
 
@@ -791,7 +791,7 @@ negocio.
 Se revisó cada operación del módulo para decidir si requería
 `prisma.$transaction`:
 
-- **Crear**: solo *lee* `Usuario` (vía `UsuariosService.buscarPorId`) para
+- **Crear**: solo _lee_ `Usuario` (vía `UsuariosService.buscarPorId`) para
   validar existencia/estado/rol; el único `write` es sobre
   `PerfilMotorizado`. No modifica dos entidades.
 - **Actualizar**: solo escribe sobre `PerfilMotorizado` (`placa`/`estado`).
@@ -833,13 +833,13 @@ negocio exigidas — sin duplicar lógica ni tocar la entidad Prisma cruda de
 
 ### Endpoints implementados
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| POST | `/api/v1/perfiles-motorizados` | Crear perfil (valida usuario existente, activo, no eliminado, rol motorizado, sin perfil previo) |
-| GET | `/api/v1/perfiles-motorizados` | Listar con paginación + filtros por `usuarioId`, `estado`, `placa` |
-| GET | `/api/v1/perfiles-motorizados/:id` | Buscar por id |
-| PATCH | `/api/v1/perfiles-motorizados/:id` | Actualizar `placa`/`estado` |
-| DELETE | `/api/v1/perfiles-motorizados/:id` | Eliminación **física** (el modelo no tiene `deletedAt`) |
+| Método | Ruta                               | Descripción                                                                                      |
+| ------ | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
+| POST   | `/api/v1/perfiles-motorizados`     | Crear perfil (valida usuario existente, activo, no eliminado, rol motorizado, sin perfil previo) |
+| GET    | `/api/v1/perfiles-motorizados`     | Listar con paginación + filtros por `usuarioId`, `estado`, `placa`                               |
+| GET    | `/api/v1/perfiles-motorizados/:id` | Buscar por id                                                                                    |
+| PATCH  | `/api/v1/perfiles-motorizados/:id` | Actualizar `placa`/`estado`                                                                      |
+| DELETE | `/api/v1/perfiles-motorizados/:id` | Eliminación **física** (el modelo no tiene `deletedAt`)                                          |
 
 Documentado en Swagger, tag `Perfiles de Motorizados`.
 
@@ -994,12 +994,12 @@ ningún caso que requiriera documentarse bajo esa regla.
 Además del caso de `codigoPedido` (mismo entidad, ver arriba), se revisó
 si alguna operación de este módulo escribe en más de una tabla:
 
-- **Crear**: solo *lee* `Sucursal`/`Cliente`/`Usuario` para validar; el
+- **Crear**: solo _lee_ `Sucursal`/`Cliente`/`Usuario` para validar; el
   único `write` es sobre `Pedido` (dentro de la transacción ya descrita).
 - **Actualizar**: solo escribe sobre `Pedido`. No toca ninguna otra tabla.
 - **Eliminar**: solo borra de `Pedido`. No toca ninguna otra tabla.
 
-Ninguna operación de este módulo escribe en dos *entidades* distintas a la
+Ninguna operación de este módulo escribe en dos _entidades_ distintas a la
 vez, por lo que no se usó `$transaction` para ese propósito — solo para el
 caso de consistencia intra-fila ya explicado.
 
@@ -1030,13 +1030,13 @@ tocar las entidades Prisma crudas de esos módulos.
 
 ### Endpoints implementados
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| POST | `/api/v1/pedidos` | Registrar pedido (estado inicial `pendiente`, sin motorizado) |
-| GET | `/api/v1/pedidos` | Listar con paginación + filtros por código, cliente, sucursal, estado, rango de fechas |
-| GET | `/api/v1/pedidos/:id` | Buscar por id |
-| PATCH | `/api/v1/pedidos/:id` | Actualizar datos descriptivos del pedido |
-| DELETE | `/api/v1/pedidos/:id` | Eliminación **física** (el modelo no tiene `deletedAt`) |
+| Método | Ruta                  | Descripción                                                                            |
+| ------ | --------------------- | -------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/pedidos`     | Registrar pedido (estado inicial `pendiente`, sin motorizado)                          |
+| GET    | `/api/v1/pedidos`     | Listar con paginación + filtros por código, cliente, sucursal, estado, rango de fechas |
+| GET    | `/api/v1/pedidos/:id` | Buscar por id                                                                          |
+| PATCH  | `/api/v1/pedidos/:id` | Actualizar datos descriptivos del pedido                                               |
+| DELETE | `/api/v1/pedidos/:id` | Eliminación **física** (el modelo no tiene `deletedAt`)                                |
 
 Documentado en Swagger, tag `Pedidos`.
 
@@ -1230,13 +1230,13 @@ src/modules/flujo-pedido/        (casos de uso de negocio)
 
 ### Endpoints implementados
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| POST | `/api/v1/pedidos/:id/confirmar-recojo` | CU08 — foto de recojo, estado→`recogido`, historial |
-| POST | `/api/v1/pedidos/:id/iniciar-ruta` | CU09 — estado→`en_ruta`, historial (sin fotos) |
-| POST | `/api/v1/pedidos/:id/confirmar-entrega` | CU10 — foto(s) de entrega, estado→`entregado`, historial |
-| GET | `/api/v1/pedidos/:id/historial` | Consultar historial paginado de un pedido |
-| GET | `/api/v1/pedidos/:id/fotos` | Consultar fotos paginadas de un pedido |
+| Método | Ruta                                    | Descripción                                              |
+| ------ | --------------------------------------- | -------------------------------------------------------- |
+| POST   | `/api/v1/pedidos/:id/confirmar-recojo`  | CU08 — foto de recojo, estado→`recogido`, historial      |
+| POST   | `/api/v1/pedidos/:id/iniciar-ruta`      | CU09 — estado→`en_ruta`, historial (sin fotos)           |
+| POST   | `/api/v1/pedidos/:id/confirmar-entrega` | CU10 — foto(s) de entrega, estado→`entregado`, historial |
+| GET    | `/api/v1/pedidos/:id/historial`         | Consultar historial paginado de un pedido                |
+| GET    | `/api/v1/pedidos/:id/fotos`             | Consultar fotos paginadas de un pedido                   |
 
 Documentado en Swagger, tags `Flujo de Pedido`, `Historial de Pedidos`,
 `Fotos de Entrega`.
@@ -1416,15 +1416,15 @@ src/modules/incidentes/      (modulo nuevo, CRUD parcial)
 
 ### Endpoints implementados
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| POST | `/api/v1/pedidos/:id/asignar-motorizado` | CU05 — estado→`asignado`, historial |
-| POST | `/api/v1/pedidos/:id/reasignar-motorizado` | CU06 — cambia motorizado, historial (`reasignacion`) |
-| POST | `/api/v1/pedidos/:id/cliente-ausente` | CU11 — estado→`cliente_ausente`, historial |
-| POST | `/api/v1/pedidos/:id/rechazo` | CU12 — estado→`rechazado`, historial |
-| POST | `/api/v1/incidentes` | CU13 — crear incidente (sin historial) |
-| GET | `/api/v1/incidentes` | Listar con paginación y filtros |
-| GET | `/api/v1/incidentes/:id` | Buscar por id |
+| Método | Ruta                                       | Descripción                                          |
+| ------ | ------------------------------------------ | ---------------------------------------------------- |
+| POST   | `/api/v1/pedidos/:id/asignar-motorizado`   | CU05 — estado→`asignado`, historial                  |
+| POST   | `/api/v1/pedidos/:id/reasignar-motorizado` | CU06 — cambia motorizado, historial (`reasignacion`) |
+| POST   | `/api/v1/pedidos/:id/cliente-ausente`      | CU11 — estado→`cliente_ausente`, historial           |
+| POST   | `/api/v1/pedidos/:id/rechazo`              | CU12 — estado→`rechazado`, historial                 |
+| POST   | `/api/v1/incidentes`                       | CU13 — crear incidente (sin historial)               |
+| GET    | `/api/v1/incidentes`                       | Listar con paginación y filtros                      |
+| GET    | `/api/v1/incidentes/:id`                   | Buscar por id                                        |
 
 Documentado en Swagger, tags `Flujo de Pedido` e `Incidentes` (ya
 existentes/nuevo respectivamente).
@@ -1731,7 +1731,7 @@ verificó adicionalmente con `tsc --noEmit --noUnusedLocals
    en usuarios/tiendas/perfiles-motorizados/pedidos. Mismos códigos y
    mensajes de excepción que antes.
 3. **Duplicación del cálculo de paginación**: `(query.page - 1) *
-   query.limit` repetido literalmente en 10 servicios. Se agregó un
+query.limit` repetido literalmente en 10 servicios. Se agregó un
    getter `skip` a `PaginationQueryDto` (`src/common/dto/pagination-query.dto.ts`)
    y se reemplazó en los 10 puntos de uso. Resultado idéntico (mismo
    `skip`/`take` enviado a cada repositorio).
@@ -1752,10 +1752,10 @@ verificó adicionalmente con `tsc --noEmit --noUnusedLocals
    salida, una consulta menos por login.
 7. **Documentación Swagger incompleta**:
    - `PaginatedResponseDto.data` no tenía `@ApiProperty` (afectaba el
-     esquema de *todos* los endpoints paginados). Agregado.
+     esquema de _todos_ los endpoints paginados). Agregado.
    - Ningún endpoint documentaba el `400` que puede producir el
      `ValidationPipe` global (`whitelist: true, forbidNonWhitelisted:
-     true`) ni el que produce `ParseIntPipe` sobre un `:id` no numérico.
+true`) ni el que produce `ParseIntPipe` sobre un `:id` no numérico.
      Se agregó `@ApiResponse({status: 400, ...})` a los ~52 endpoints
      afectados (todos los que reciben `@Body()`, `@Query()` o
      `@Param('id', ParseIntPipe)`), en los 12 controllers.
@@ -1808,7 +1808,7 @@ datos devueltos — verificado con la regresión completa (ver más abajo).
   independientes (ej. sucursal, cliente, usuario) en vez de
   `Promise.all`. Es una oportunidad de rendimiento real, pero
   paralelizar cambia el orden en que se evalúan los `NotFoundException`
-  cuando *más de una* referencia es inválida a la vez (hoy es
+  cuando _más de una_ referencia es inválida a la vez (hoy es
   determinístico por orden de código; en paralelo pasa a depender de
   qué promesa resuelve primero). Se documenta como recomendación de
   rendimiento, no se aplica, porque altera un comportamiento observable
@@ -1861,7 +1861,7 @@ datos devueltos — verificado con la regresión completa (ver más abajo).
 - Índices existentes (`@@index([estado])`, `@@index([creadoEn])` en
   Pedido; `@@index([pedidoId, createdAt])` en HistorialPedido;
   `@@index([pedidoId, tipo])` en FotoEntrega; `@@index([motorizadoId,
-  resuelto])` en Incidente; `@@index([estado])` en PerfilMotorizado)
+resuelto])` en Incidente; `@@index([estado])` en PerfilMotorizado)
   cubren los filtros realmente usados en los `where` de cada módulo. No
   se detectaron filtros frecuentes sin índice de soporte.
 
@@ -1905,7 +1905,7 @@ JWT/guards/roles.
    severidad real, aunque no afecta ningún flujo probado en fases
    anteriores porque nunca se probó `resuelto=false` explícitamente.
 2. Configuración CORS contradictoria (`origin: '*'` + `credentials:
-   true`).
+true`).
 3. `reasignarMotorizado` sin validación de estado del pedido
    (inconsistente con sus 5 métodos hermanos).
 4. Paralelización pendiente de validaciones independientes en
@@ -1968,6 +1968,7 @@ con `credentials: true` en `main.ts` — combinación inválida según la
 especificación CORS si la variable de entorno no se configura.
 
 **Después:**
+
 - `CORS_ORIGIN` pasa a ser **obligatoria** en `env.validation.ts`
   (`@IsNotEmpty()`, sin valor por defecto), exactamente el mismo patrón
   ya usado para `DATABASE_URL` desde la Fase 1 — la aplicación no
@@ -1979,7 +1980,7 @@ especificación CORS si la variable de entorno no se configura.
   producción) sin escribir ningún origen en el código — ambos quedan
   únicamente en `.env`/`.env.example`.
 - `main.ts` no se modificó: `app.enableCors({ origin: corsOrigin,
-  credentials: true })` ya funcionaba igual pasándole un array de
+credentials: true })` ya funcionaba igual pasándole un array de
   orígenes (soportado nativamente por el paquete `cors`).
 - `.env` y `.env.example` actualizados solo con un comentario
   explicando el formato (lista separada por comas) y un ejemplo con
@@ -2117,3 +2118,112 @@ de la base de datos al finalizar; servidor de pruebas detenido.
 cambio posterior debe responder a un bug crítico descubierto durante el
 desarrollo del frontend o a un nuevo requerimiento del cliente, no a
 refactorizaciones espontáneas.
+
+## Fase 13 — Corrección de Hallazgos Críticos de Auditoría (proyecto Fase 15)
+
+Excepción explícita al feature freeze de la Fase 12: una auditoría
+integral del proyecto completo (proyecto Fase 14, ver
+`AUDIT_REPORT.md`/`TECH_DEBT.md` en la raíz del repositorio) encontró
+dos bugs críticos reales en el backend. Esta fase corrige exclusivamente
+esos dos hallazgos — ninguna funcionalidad nueva, ningún DTO público
+modificado, ningún cambio de esquema de base de datos.
+
+### C1 — Condición de carrera en `flujo-pedido`
+
+**Diagnóstico confirmado**: las 8 transiciones de estado (asignar,
+reasignar, confirmar-recojo, iniciar-ruta, confirmar-entrega,
+cliente-ausente, rechazo, cancelar) validaban la precondición de
+negocio (estado esperado, o motorizado actual esperado) _antes_ de
+abrir `prisma.$transaction`, y el `tx.pedido.update()` dentro de la
+transacción filtraba únicamente por `id` — sin condicionar por esa
+misma precondición. Dos solicitudes concurrentes sobre el mismo pedido
+podían pasar ambas la validación antes de que cualquiera escribiera,
+produciendo transiciones dobles (dos eventos de `historial_pedido`,
+fotos duplicadas) sin que el backend devolviera nunca un `409`.
+
+**Corrección aplicada**: se agregó `actualizarPedidoCondicional`,
+método privado único en `flujo-pedido.repository.ts`, reutilizado por
+los 8 casos de uso (sin duplicar lógica). Ejecuta
+`tx.pedido.updateMany({ where: { id, ...precondición }, data })` dentro
+de la misma transacción; si `count === 0` (la precondición ya no se
+cumple porque otra transacción ganó la carrera), lanza
+`ConflictException` — la transacción completa se revierte, sin
+escrituras parciales en `historial_pedido` ni `fotos_entrega` — y el
+cliente recibe `409 Conflict`. Es concurrencia optimista pura: MySQL ya
+bloquea la fila coincidente y reevalúa el `WHERE` contra el valor
+comprometido, así que no hizo falta agregar bloqueo explícito
+(`SELECT ... FOR UPDATE`) ni una columna de versión.
+
+`ESTADOS_CANCELABLES` (antes definida solo en el service) se movió a
+`interfaces/flujo-pedido-repository.interface.ts` — única fuente de
+verdad ahora importada tanto por el service (mensaje de error legible
+en el chequeo rápido previo) como por el repository (condición atómica
+del `updateMany` de `cancelarPedido`), para no mantener la misma lista
+de estados en dos archivos.
+
+`reasignarMotorizado` **no** ganó una validación de estado nueva —
+sigue exactamente igual que antes (inconsistencia de negocio ya
+documentada en la Fase 11/12, dejada abierta a propósito pendiente de
+decisión del cliente). Lo único que cambió es que su propia precondición
+existente (que el motorizado actual coincida con `motorizadoAnteriorId`)
+ahora también se verifica de forma atómica dentro de la transacción, no
+solo antes de abrirla — cerrando la misma clase de condición de carrera
+para ese caso de uso sin alterar su semántica de negocio.
+
+**Verificado con solicitudes concurrentes reales** contra MySQL: dos
+`POST /pedidos/:id/confirmar-recojo` simultáneos sobre el mismo pedido
+`asignado` — uno resolvió `201` (`estado: recogido`), el otro `409`
+(`"El pedido debe estar en estado 'asignado' para confirmar el recojo
+(estado actual: 'recogido')"`); `historial_pedido` y `fotos_entrega`
+quedaron con exactamente un registro nuevo cada uno (no dos). Flujo
+completo posterior (iniciar-ruta → confirmar-entrega) verificado sin
+regresión, terminando en `estado: entregado` con observaciones y foto
+correctas. Un intento tardío de `confirmar-recojo` sobre el pedido ya
+`entregado` devolvió `409` (nunca `500`).
+
+### C2 — Fuga de información en `HttpExceptionFilter`
+
+**Diagnóstico confirmado**: para cualquier excepción que no fuera una
+instancia de `HttpException` (es decir, prácticamente cualquier error
+no lanzado deliberadamente por nuestro propio código — errores de
+Prisma, de conexión, cualquier `throw` inesperado, dado que casi todo
+lo que se lanza en JS/TS es una instancia de `Error`), el filtro caía
+en `exception.message` y lo devolvía tal cual en la respuesta HTTP —
+contradiciendo lo ya documentado en `ARCHITECTURE.md` ("la respuesta al
+cliente nunca incluye detalles internos").
+
+**Corrección aplicada**: `src/common/filters/http-exception.filter.ts`
+ahora usa siempre el mensaje genérico fijo `'Error interno del
+servidor'` para cualquier excepción que no sea un `HttpException`
+propio — sin ninguna rama que exponga `exception.message` en ese caso.
+El `stack` completo se sigue logueando únicamente del lado del servidor
+(sin cambios ahí). Los mensajes de errores HTTP conocidos y ya
+esperados por el frontend (400/401/403/404/409/422, todos lanzados
+deliberadamente por nuestro propio código con texto controlado) no
+cambiaron en absoluto.
+
+### Verificación de no-regresión
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · `npm test` (unit) ✓ ·
+`npm run test:e2e` ✓. Contra MySQL real: se confirmó `200`/`201` en
+Usuarios, Tiendas, Sucursales, Clientes, Perfiles de Motorizados,
+Pedidos, Incidentes, y los 3 endpoints de Reportes; `404` conocido
+(`GET /usuarios/999999`) y `400` conocido (`GET /usuarios/abc`) se
+comportan exactamente igual que antes de esta fase — la corrección de
+`HttpExceptionFilter` solo afecta la rama de error no controlado
+(`!isHttpException`), nunca los códigos HTTP ya documentados.
+
+### Archivos modificados
+
+- `src/modules/flujo-pedido/flujo-pedido.repository.ts` (C1)
+- `src/modules/flujo-pedido/flujo-pedido.service.ts` (C1 — ajuste menor: importa `ESTADOS_CANCELABLES` desde la interfaz en vez de definirla localmente; pasa `motorizadoAnteriorId` al repository)
+- `src/modules/flujo-pedido/interfaces/flujo-pedido-repository.interface.ts` (C1 — `ESTADOS_CANCELABLES` movida aquí; `ReasignarMotorizadoData` gana el campo `motorizadoAnteriorId`)
+- `src/common/filters/http-exception.filter.ts` (C2)
+
+Ningún DTO público, ningún endpoint, ningún contrato HTTP externo
+cambió. `ReasignarMotorizadoData`/`ESTADOS_CANCELABLES` son tipos
+internos del repositorio (nunca expuestos vía HTTP), por lo que este
+cambio no rompe compatibilidad con el frontend.
+
+**El backend vuelve a quedar en feature freeze** al cerrar esta fase.

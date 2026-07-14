@@ -2,6 +2,7 @@ import { X } from 'lucide';
 import { Icon } from '../icon/icon';
 import { cn } from '../../utils/cn';
 import { el } from '../../utils/dom';
+import { focusFirstElement, restoreFocus, trapTabKey } from '../../utils/focus-trap';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 
@@ -52,10 +53,14 @@ export function Modal(props: ModalProps): ModalHandle {
     className: cn(
       'flex max-h-[85vh] w-full origin-center flex-col rounded-xl bg-surface-elevated shadow-lg',
       'scale-95 opacity-0 transition-all duration-150 ease-out',
+      'focus:outline-none',
       SIZE_CLASSES[size],
     ),
     role: 'dialog',
     'aria-modal': 'true',
+    // Foco de respaldo (Fase 15) cuando el panel no tiene ningun elemento
+    // enfocable propio — ver `focusFirstElement`/`trapTabKey`.
+    tabindex: '-1',
   });
 
   if (props.title) {
@@ -108,13 +113,22 @@ export function Modal(props: ModalProps): ModalHandle {
   );
 
   let closeTimeout: number | undefined;
+  // Elemento que tenia el foco justo antes de abrir (Fase 15): a donde
+  // vuelve el foco al cerrar. Ver `restoreFocus` (utils/focus-trap.ts).
+  let previouslyFocused: HTMLElement | null = null;
 
   function handleKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') close();
+    if (event.key === 'Escape') {
+      close();
+      return;
+    }
+    trapTabKey(event, panel);
   }
 
   function open(): void {
     window.clearTimeout(closeTimeout);
+    previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     overlay.classList.remove('hidden');
     overlay.classList.add('flex');
     // Doble rAF: fuerza un reflow con el estado inicial (opacity-0/scale-95)
@@ -127,6 +141,7 @@ export function Modal(props: ModalProps): ModalHandle {
     });
     document.body.classList.add('overflow-hidden');
     document.addEventListener('keydown', handleKeydown);
+    focusFirstElement(panel);
   }
 
   function close(): void {
@@ -138,6 +153,8 @@ export function Modal(props: ModalProps): ModalHandle {
     }, CLOSE_ANIMATION_MS);
     document.body.classList.remove('overflow-hidden');
     document.removeEventListener('keydown', handleKeydown);
+    restoreFocus(panel, previouslyFocused);
+    previouslyFocused = null;
     props.onClose?.();
   }
 

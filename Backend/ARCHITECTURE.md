@@ -53,7 +53,7 @@ Cada módulo respeta una separación estricta de responsabilidades:
 
 - **Controller**: solo mapea HTTP ⇄ llamadas al service. Nunca contiene lógica de negocio ni acceso a Prisma.
 - **Service**: dueño de las reglas de negocio (validaciones, orden de operaciones, mensajes de error). Depende del repositorio **por interfaz**, nunca de la clase concreta.
-- **Repository**: única capa que conoce Prisma. Implementa una interfaz (`IXxxRepository`) inyectada por *token* (`Symbol('XXX_REPOSITORY')`), nunca se inyecta la clase concreta directamente en el service.
+- **Repository**: única capa que conoce Prisma. Implementa una interfaz (`IXxxRepository`) inyectada por _token_ (`Symbol('XXX_REPOSITORY')`), nunca se inyecta la clase concreta directamente en el service.
 - **Mapper**: clase estática sin estado, convierte entidades Prisma a DTOs de respuesta (conversión de `BigInt`/`Decimal` a `string` para serialización JSON segura).
 - **DTOs**: `class-validator`/`class-transformer` decoran cada campo; el `ValidationPipe` global (`whitelist: true, forbidNonWhitelisted: true`) rechaza cualquier campo no declarado.
 
@@ -61,7 +61,9 @@ Cada módulo respeta una separación estricta de responsabilidades:
 
 ```typescript
 export const USUARIOS_REPOSITORY = Symbol('USUARIOS_REPOSITORY');
-export interface IUsuariosRepository { /* ... */ }
+export interface IUsuariosRepository {
+  /* ... */
+}
 
 @Injectable()
 export class UsuariosService {
@@ -104,38 +106,50 @@ reportes (sin imports de otros modulos, solo Prisma directo)
 
 ## 5. Patrones de diseño usados
 
-| Patrón | Dónde | Por qué |
-|---|---|---|
-| Repository | Toda capa de acceso a datos | Aísla Prisma del resto de la app; permite testear services con mocks del contrato |
-| Dependency Inversion (tokens `Symbol`) | Todos los `*.module.ts` | El service nunca conoce la implementación concreta del repositorio |
-| Mapper / DTO | Toda respuesta HTTP | Nunca se serializa una entidad Prisma directamente (evita fugas de columnas internas, resuelve `BigInt`/`Decimal`) |
-| Static utility class | Todos los `*.mapper.ts` | Sin estado, sin necesidad de DI, invocación directa |
-| Strategy implícita vía interfaz | `IXxxRepository` | Contrato explícito entre capa de negocio y de datos |
-| Unit of Work (transacción) | `prisma.$transaction` en `flujo-pedido.repository.ts` y `pedidos.repository.ts` (creación con código transitorio) | Garantiza atomicidad cuando una operación escribe más de una tabla |
-| Template method (informal) | `crearEventoHistorial` en `flujo-pedido.repository.ts` (Fase 11) | Centraliza el paso común (escribir `historial_pedido`) de 8 casos de uso que comparten forma pero difieren en el resto de la transacción |
+| Patrón                                       | Dónde                                                                                                             | Por qué                                                                                                                                                                                                                                                         |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository                                   | Toda capa de acceso a datos                                                                                       | Aísla Prisma del resto de la app; permite testear services con mocks del contrato                                                                                                                                                                               |
+| Dependency Inversion (tokens `Symbol`)       | Todos los `*.module.ts`                                                                                           | El service nunca conoce la implementación concreta del repositorio                                                                                                                                                                                              |
+| Mapper / DTO                                 | Toda respuesta HTTP                                                                                               | Nunca se serializa una entidad Prisma directamente (evita fugas de columnas internas, resuelve `BigInt`/`Decimal`)                                                                                                                                              |
+| Static utility class                         | Todos los `*.mapper.ts`                                                                                           | Sin estado, sin necesidad de DI, invocación directa                                                                                                                                                                                                             |
+| Strategy implícita vía interfaz              | `IXxxRepository`                                                                                                  | Contrato explícito entre capa de negocio y de datos                                                                                                                                                                                                             |
+| Unit of Work (transacción)                   | `prisma.$transaction` en `flujo-pedido.repository.ts` y `pedidos.repository.ts` (creación con código transitorio) | Garantiza atomicidad cuando una operación escribe más de una tabla                                                                                                                                                                                              |
+| Template method (informal)                   | `crearEventoHistorial` en `flujo-pedido.repository.ts` (Fase 11)                                                  | Centraliza el paso común (escribir `historial_pedido`) de 8 casos de uso que comparten forma pero difieren en el resto de la transacción                                                                                                                        |
+| Concurrencia optimista (update condicionado) | `actualizarPedidoCondicional` en `flujo-pedido.repository.ts` (Fase 13 del backend / Fase 15 del proyecto)        | Cierra la condición de carrera entre "validar precondición" y "escribir": el `UPDATE` de cada transición filtra por `id` **y** por la precondición de negocio (estado esperado, o motorizado actual esperado) en una sola sentencia atómica — ver detalle abajo |
 
 ## 6. Decisiones técnicas relevantes
 
 - **IDs `BigInt`**: todas las PK son `BigInt` (autoincremental). Se serializan como `string` en cada DTO de respuesta vía `.toString()` en el mapper — necesario porque `JSON.stringify` no soporta `bigint` nativamente.
 - **Eliminación lógica vs física**: `Usuario`, `Tienda`, `Sucursal` y `Cliente` tienen `deletedAt` (soft delete). `PerfilMotorizado`, `Pedido`, `HistorialPedido`, `FotoEntrega` e `Incidente` **no** tienen `deletedAt` — se eliminan físicamente donde el caso de uso lo permite (decisión documentada por fase en `DEVELOPMENT_PROGRESS.md`).
 - **`codigoPedido = id.toString()`**: al no existir un formato de código definido en la documentación funcional, se decidió (Fase 7, con aprobación explícita) usar el mismo id autoincremental como código público. Esto exige un valor transitorio único durante el `create` (el id no se conoce hasta el insert) que se corrige en la misma transacción.
-- **`flujo-pedido` como máquina de estados centralizada**: todas las transiciones de `EstadoPedido` (incluida la cancelación, Fase 10) viven en un único módulo con un patrón repetido de "validar precondición → transacción con update + evento de historial". Fase 11 extrajo la parte común de ese patrón sin tocar las precondiciones de cada caso de uso.
+- **`flujo-pedido` como máquina de estados centralizada**: todas las transiciones de `EstadoPedido` (incluida la cancelación, Fase 10) viven en un único módulo con un patrón repetido de "validar precondición → transacción con update condicionado + evento de historial (+ fotos si aplica)". Fase 11 extrajo la parte común del registro de historial; la corrección de auditoría (backend Fase 13 / proyecto Fase 15) extrajo la parte común de la escritura condicionada (`actualizarPedidoCondicional`) sin tocar las precondiciones de negocio de cada caso de uso.
+- **Condición de carrera en `flujo-pedido` — corregida (backend Fase 13 / proyecto Fase 15)**: antes de esta corrección, cada transición leía y validaba el estado del pedido _antes_ de abrir la transacción, y el `UPDATE` dentro de la transacción filtraba únicamente por `id` — dos solicitudes concurrentes sobre el mismo pedido podían pasar ambas la validación antes de que cualquiera escribiera, produciendo transiciones dobles/inconsistentes sin que el backend lo detectara (ver `AUDIT_REPORT.md`, hallazgo C1). La corrección usa concurrencia optimista: `tx.pedido.updateMany({ where: { id, <precondición> }, data })` — MySQL/InnoDB bloquea la fila coincidente y reevalúa el `WHERE` contra el valor ya comprometido, así que si otra transacción ya cambió esa precondición, `count` es `0` y se responde `409 Conflict` sin haber escrito nada (ni `historial_pedido` ni `fotos_entrega`). No se agregó bloqueo explícito (`SELECT ... FOR UPDATE`) ni una columna de versión: el propio `UPDATE ... WHERE` condicionado ya es atómico a nivel de fila. La validación previa a la transacción (`verificarEstado`/`verificarMotorizadoAsignado` en el service) se mantiene intacta como primer filtro rápido con un mensaje de error preciso para el caso normal (no-concurrente); la condición dentro de la transacción es la que garantiza la atomicidad real. `reasignarMotorizado` sigue sin validar el estado del pedido (inconsistencia de negocio ya documentada y dejada abierta a propósito, ver Fase 11/12 de este documento) — la corrección de concurrencia respeta exactamente esa misma semántica, condicionando el `UPDATE` por el motorizado actual esperado en vez de por un estado.
 - **`reportes` de solo lectura, sin transacciones**: al no escribir datos, no usa `$transaction`; sus tres endpoints hacen `select` explícito y agregaciones con `groupBy` para evitar N+1 al calcular métricas por motorizado.
-- **Sin JWT/autenticación por token**: todos los endpoints que necesitan saber "quién realiza la acción" (`creadoPorId`, `usuarioId`, `motorizadoId`) lo reciben explícito en el body o como filtro, porque no hay sesión de la que inferirlo. Es una limitación conocida y deliberada, no un descuido.
+- **Sin JWT/autenticación por token — decisión deliberada, con requisito explícito antes de producción (revisado en la auditoría, proyecto Fase 14/15)**: todos los endpoints que necesitan saber "quién realiza la acción" (`creadoPorId`, `usuarioId`, `motorizadoId`) lo reciben explícito en el body o como filtro, porque no hay sesión de la que inferirlo. Esta sigue siendo una limitación conocida y deliberada, **no un bug** — pero la auditoría de la Fase 14 cuantificó su alcance real y debe quedar explícito aquí:
+  - **Alcance**: afecta a todos los endpoints de `flujo-pedido` (asignar, reasignar, confirmar-recojo, iniciar-ruta, confirmar-entrega, cliente-ausente, rechazo, cancelar) y a cualquier otro endpoint que reciba un id de "quién actúa" en el body.
+  - **Impacto**: cualquier cliente con acceso de red a la API puede leer `GET /pedidos/:id`, obtener el `motorizadoActualId`/ids relacionados, y luego invocar cualquier transición de ese pedido suministrando esos ids — no hay forma de que el backend verifique que quien hace la llamada HTTP es realmente ese usuario/motorizado.
+  - **Limitación**: no existe ningún mecanismo de sesión, token ni autorización por rol en ningún endpoint del sistema actualmente.
+  - **Requisito obligatorio antes de producción**: este proyecto **no debe desplegarse con datos ni usuarios reales** sin resolver esta limitación (implementar JWT + guards + roles) — o, como mitigación temporal estrictamente paliativa, sin restringir el acceso de red a la API a una red privada/VPN de confianza. Ver `TECH_DEBT.md` (sección 1) para el alcance de la implementación futura.
 
 ## 7. Manejo de errores
 
 Filtro global (`HttpExceptionFilter`) intercepta toda excepción y devuelve un formato uniforme:
 
 ```json
-{ "statusCode": 404, "timestamp": "...", "path": "...", "method": "...", "message": "..." }
+{
+  "statusCode": 404,
+  "timestamp": "...",
+  "path": "...",
+  "method": "...",
+  "message": "..."
+}
 ```
 
 - `400`: `ValidationPipe` (DTO inválido) o `ParseIntPipe` (`:id` no numérico), o una regla de negocio puntual (ej. estado inválido en Reporte de Entregas).
 - `401`: credenciales inválidas en login (mensaje genérico, no distingue usuario inexistente/inactivo/contraseña incorrecta, para evitar enumeración de usuarios).
 - `404`: entidad no encontrada o eliminada lógicamente.
-- `409`: conflicto de unicidad (nombre/correo/usuario duplicado), conflicto de estado (transición de `Pedido` no permitida) o violación de llave foránea al eliminar.
-- Errores no controlados (500): se loguea el stack trace del lado del servidor únicamente; la respuesta al cliente nunca incluye detalles internos.
+- `409`: conflicto de unicidad (nombre/correo/usuario duplicado), conflicto de estado (transición de `Pedido` no permitida, incluida la condición de carrera detectada dentro de la transacción — ver sección 6) o violación de llave foránea al eliminar.
+- Errores no controlados (500): se loguea el stack trace del lado del servidor únicamente; la respuesta al cliente nunca incluye detalles internos — **este comportamiento estaba roto y se corrigió en la auditoría** (ver `AUDIT_REPORT.md`, hallazgo C2): antes de la corrección, `HttpExceptionFilter` devolvía `exception.message` para cualquier error que fuera una instancia de `Error` (es decir, prácticamente cualquier excepción no lanzada explícitamente por nuestro propio código, incluidos los errores de Prisma), filtrando texto interno al cliente. Ahora, para cualquier excepción que no sea un `HttpException` propio, el mensaje de respuesta es siempre el genérico `'Error interno del servidor'`, sin excepción — el detalle real solo se loguea del lado del servidor (`Logger.error`, con el `stack` completo). Los mensajes de los `HttpException` conocidos (400/401/403/404/409/422, todos lanzados deliberadamente por el propio código) no cambiaron.
 
 ## 8. Configuración
 
