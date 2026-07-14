@@ -31,7 +31,14 @@ export function Tooltip(props: TooltipProps): HTMLSpanElement {
     {
       role: 'tooltip',
       className: cn(
-        'pointer-events-none absolute z-40 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs text-white shadow-md',
+        // `max-w` + `whitespace-normal` en vez de `whitespace-nowrap` sin
+        // limite: a diferencia de Dropdown (Portal + computeFloatingPosition),
+        // este tooltip es puramente CSS y no mide el viewport disponible —
+        // sin un limite de ancho, un `content` largo cerca de un borde
+        // pequeño (ej. Sidebar colapsado en una ventana angosta) se saldria
+        // de la pantalla. `calc(100vw-1rem)` deja como maximo el ancho del
+        // viewport con un margen de seguridad, sin afectar el caso normal.
+        'pointer-events-none absolute z-40 max-w-[calc(100vw-1rem)] whitespace-normal rounded-md bg-slate-900 px-2 py-1 text-xs text-white shadow-md',
         'opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100',
         'dark:bg-slate-700',
         POSITION_CLASSES[position],

@@ -51,7 +51,10 @@ export function Checkbox(props: CheckboxProps): CheckboxHandle {
       'label',
       {
         htmlFor: inputId,
-        className: 'flex cursor-pointer items-center gap-2 text-sm text-text-primary',
+        // `py-2` (en vez de agrandar el checkbox de 16px, que rompería la
+        // escala visual del formulario) amplia solo el AREA de toque de
+        // toda la fila etiqueta+checkbox, tal como pide Fase 13.
+        className: 'flex cursor-pointer items-center gap-2 py-2 text-sm text-text-primary',
       },
       checkbox,
       props.label,

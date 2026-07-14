@@ -17,8 +17,8 @@ import { SucursalesPage } from '@pages/admin/sucursales/sucursales.page';
 import { TiendasPage } from '@pages/admin/tiendas/tiendas.page';
 import { UsuariosPage } from '@pages/admin/usuarios/usuarios.page';
 import { LoginPage } from '@pages/auth/login.page';
-import { PlaceholderPage } from '@pages/placeholder-page';
 import { ProfilePage } from '@pages/profile/profile.page';
+import { RiderDashboardPage } from '@pages/rider/dashboard/dashboard.page';
 import { HistorialPage } from '@pages/rider/historial/historial.page';
 import { MisPedidosPage } from '@pages/rider/mis-pedidos/mis-pedidos.page';
 import { DEFAULT_PATH_BY_ROLE } from '@constants/roles';
@@ -236,7 +236,16 @@ function mountRiderPanel(): void {
 
   const router = new Router(layout.mount);
 
-  registerPlaceholder(router, '/rider/dashboard', 'Dashboard');
+  router.register(
+    '/rider/dashboard',
+    withAuth((container) => {
+      container.appendChild(RiderDashboardPage());
+    }),
+    {
+      title: 'Dashboard',
+      breadcrumb: [{ label: 'Dashboard' }],
+    },
+  );
 
   router.register(
     '/rider/mis-pedidos',
@@ -280,17 +289,6 @@ function redirectRootTo(defaultPath: string): void {
   if (window.location.pathname === '/') {
     window.history.replaceState({}, '', defaultPath);
   }
-}
-
-function registerPlaceholder(router: Router, path: string, title: string): void {
-  const breadcrumb: RouteBreadcrumbItem[] = [{ label: title }];
-  router.register(
-    path,
-    withAuth((container) => {
-      container.appendChild(PlaceholderPage(title, breadcrumb));
-    }),
-    { title, breadcrumb },
-  );
 }
 
 interface RoutableLayout {

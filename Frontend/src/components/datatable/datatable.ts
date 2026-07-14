@@ -123,7 +123,77 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLDivElement {
   );
 
   table.appendChild(el('tbody', { className: 'divide-y divide-border-default' }, ...bodyRows));
-  wrapper.appendChild(table);
+
+  // Por debajo de `sm` la tabla se reemplaza por una lista de tarjetas
+  // apiladas (una por fila), generada automaticamente a partir de las
+  // mismas `columns` — ninguna pagina construye su propia version movil:
+  // esta es la unica estrategia responsive de DataTable, reutilizada por
+  // absolutamente todos los listados del proyecto (Admin y Rider) sin
+  // que ninguno tenga que pasar props ni markup adicional. Ambos arboles
+  // conviven en el DOM; Tailwind (`hidden`/`sm:hidden`) decide cual se ve
+  // segun el ancho de pantalla, sin JS ni listeners de resize.
+  const cardList = el(
+    'div',
+    { className: 'flex flex-col gap-3 p-3 sm:hidden' },
+    ...props.rows.map((row) => buildCard(row, props.columns, props.getRowKey(row))),
+  );
+
+  wrapper.appendChild(el('div', { className: 'hidden sm:block' }, table));
+  wrapper.appendChild(cardList);
 
   return wrapper;
+}
+
+/**
+ * Tarjeta movil generada a partir de `columns`: la primera columna con
+ * `header` no vacio es el titulo de la tarjeta; una columna con
+ * `header: ''` (la convencion ya usada en todo el proyecto para la celda
+ * de `RowActions`) se ubica junto al titulo en vez de en la lista de
+ * pares etiqueta/valor; el resto se apila como filas "etiqueta: valor".
+ * No se omite ninguna columna: mismo contenido que la tabla, solo con
+ * otra disposicion visual.
+ */
+function buildCard<T>(row: T, columns: DataTableColumn<T>[], rowKey: string): HTMLElement {
+  const metaColumn = columns.find((column) => column.header === '');
+  const contentColumns = columns.filter((column) => column.header !== '');
+  const [titleColumn, ...restColumns] = contentColumns;
+
+  function renderColumn(column: DataTableColumn<T>): Node | string {
+    return column.render ? column.render(row) : String(row[column.key] ?? '');
+  }
+
+  return el(
+    'div',
+    {
+      className:
+        'flex flex-col gap-2 rounded-lg border border-border-default p-4 transition-colors hover:bg-surface-muted',
+      dataset: { rowKey },
+    },
+    el(
+      'div',
+      { className: 'flex items-start justify-between gap-3' },
+      titleColumn
+        ? el(
+            'span',
+            { className: 'text-sm font-semibold text-text-primary' },
+            renderColumn(titleColumn),
+          )
+        : null,
+      metaColumn ? renderColumn(metaColumn) : null,
+    ),
+    restColumns.length > 0
+      ? el(
+          'dl',
+          { className: 'flex flex-col gap-1.5' },
+          ...restColumns.map((column) =>
+            el(
+              'div',
+              { className: 'flex items-baseline justify-between gap-3 text-sm' },
+              el('dt', { className: 'shrink-0 text-text-muted' }, column.header),
+              el('dd', { className: 'text-right text-text-primary' }, renderColumn(column)),
+            ),
+          ),
+        )
+      : null,
+  );
 }

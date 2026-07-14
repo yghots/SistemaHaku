@@ -1,4 +1,4 @@
-import { Bell, LogOut, Moon, Sun, User } from 'lucide';
+import { Bell, LogOut, Menu, Moon, Sun, User } from 'lucide';
 import { Avatar } from '../avatar/avatar';
 import { Breadcrumb, type BreadcrumbItem } from '../breadcrumb/breadcrumb';
 import { Icon } from '../icon/icon';
@@ -17,6 +17,8 @@ export interface NavbarProps {
   profileHref: string;
   /** Se invoca al elegir "Cerrar sesion" en el menu de usuario. Navbar no conoce SessionService: quien lo construye decide que hacer. */
   onLogout?: () => void;
+  /** Se invoca al tocar el boton hamburguesa (solo visible por debajo de `lg`). Si se omite, no se renderiza el boton — asi AuthLayout (sin Sidebar) puede seguir usando este mismo Navbar sin cambios. */
+  onMenuClick?: () => void;
   className?: string;
 }
 
@@ -32,12 +34,22 @@ export interface NavbarHandle {
  * "Mi perfil" (Fase 11, navega a `profileHref`) conectados.
  */
 export function Navbar(props: NavbarProps): NavbarHandle {
+  const menuButton = props.onMenuClick
+    ? IconButton({
+        icon: Menu,
+        label: 'Abrir menu',
+        variant: 'ghost',
+        className: 'lg:hidden',
+        onClick: () => props.onMenuClick?.(),
+      })
+    : null;
+
   const logo = el(
     'a',
     {
       href: '/',
       'data-link': 'true',
-      className: 'shrink-0 text-base font-semibold text-text-primary',
+      className: 'shrink-0 truncate text-base font-semibold text-text-primary',
     },
     props.appName,
   );
@@ -88,10 +100,11 @@ export function Navbar(props: NavbarProps): NavbarHandle {
     'header',
     {
       className: cn(
-        'flex h-16 shrink-0 items-center gap-4 border-b border-border-default bg-surface-elevated px-4 sm:px-6',
+        'flex min-h-16 shrink-0 items-center gap-2 border-b border-border-default bg-surface-elevated px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] sm:gap-4 sm:px-6',
         props.className,
       ),
     },
+    menuButton,
     logo,
     breadcrumbSlot,
     el('div', { className: 'flex-1' }, searchBar.wrapper),

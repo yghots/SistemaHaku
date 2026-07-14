@@ -99,6 +99,8 @@ export function Modal(props: ModalProps): ModalHandle {
     {
       className: cn(
         'fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/50 p-4',
+        'pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]',
+        'pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
         'opacity-0 transition-opacity duration-150 ease-out',
       ),
     },

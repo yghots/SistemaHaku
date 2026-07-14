@@ -1117,3 +1117,191 @@ No se recorre el DOM, no se disparan eventos artificiales, no se modifica ningú
 ### Problemas encontrados
 
 Ninguno bloqueante.
+
+## Fase 12 — Dashboard Operativo del Motorizado
+
+**Fecha:** 2026-07-14
+
+### Alcance de esta fase
+
+Dashboard real para el panel del Motorizado (`/rider/dashboard`, hasta ahora un placeholder desde la Fase 2). Implementación completamente independiente del Dashboard del Administrador (Fase 10): mismo patrón arquitectónico (servicio fachada dedicado), pero datos, KPIs y widgets propios — orientados exclusivamente al trabajo diario del repartidor, sin ningún indicador administrativo o de negocio.
+
+### Backend revisado antes de implementar
+
+Se revisaron los endpoints ya usados en fases anteriores para el panel del Motorizado (`perfiles-motorizados`, `pedidos`, `reportes/pedidos`, `incidentes`) buscando cuál sirve mejor para "los pedidos de este motorizado". Hallazgo clave: a diferencia de `PedidosService.listar` (`GET /pedidos`, que **no** admite filtrar por `motorizadoId` — la razón por la que Mis Pedidos/Historial, Fase 8, necesitan recorrer todas las páginas con `fetchAllPages`), `ReportesService.reportePedidos` (`GET /reportes/pedidos`) **sí** admite `motorizadoId` como filtro real de backend. Se usó como fuente principal de datos: una sola consulta filtrada trae exactamente los pedidos del motorizado autenticado, ya ordenados `creadoEn: desc` y con `tiendaNombre`/`sucursalNombre` resueltos — mucho más eficiente que recorrer todas las páginas.
+
+### RiderDashboardService (fachada obligatoria)
+
+`src/services/rider-dashboard.service.ts` — único punto que `RiderDashboardPage` consulta. Reutiliza internamente `MotorizadosService`, `ReportesService`, `PedidosService`, `ClientesService`, `IncidentesService` y `SessionService`. Si el backend agrega en el futuro un `GET /dashboard/motorizado`, solo este archivo cambiaría.
+
+### Decisiones técnicas resueltas por razonamiento propio (documentadas, no bloqueantes)
+
+1. **"Pedidos entregados hoy" es una aproximación documentada, no un dato exacto**: `Pedido`/`ReportePedidoItem` solo tienen `creadoEn` (fecha de creación) — el backend no registra la fecha real de entrega en ningún campo. Averiguarla con precisión exigiría consultar el historial de eventos de **cada** pedido entregado (`GET /pedidos/:id/historial`, buscando el evento `cambio_estado` a `entregado`), lo que implicaría N solicitudes redundantes por cada pedido — contrario a la instrucción explícita de evitar consultas repetidas. Se aproxima como "creado hoy y actualmente en estado `entregado`" (documentado en el propio tipo `RiderDashboardKpis` y en el código): puede subestimar un pedido creado un día anterior pero entregado hoy, un caso poco frecuente dado que el ciclo de vida típico de un pedido se completa el mismo día. No se inventó ningún dato: la aproximación usa exclusivamente campos reales (`estado`, `creadoEn`).
+2. **"Incidentes registrados" es un total histórico, no de "hoy"**: `Incidente` (`IncidenteResponseDto`) no tiene ningún campo de fecha — no hay forma de acotarlo a un rango temporal sin inventar un dato inexistente. Se muestra el total histórico tal cual, sin fingir que está limitado a "hoy".
+3. **Selección de "Mi próximo pedido" — regla FIFO explícita**: de los pedidos activos del motorizado (estados `asignado`, `recogido` o `en_ruta` — cualquiera que todavía requiera una acción suya), se elige el de `creadoEn` más antiguo. Es la interpretación con menos supuestos posible ("atender primero al que lleva más tiempo esperando"), en vez de inventar una jerarquía de urgencia por estado (ej. "en_ruta antes que asignado") que el backend no define en ningún lado.
+4. **El detalle completo del próximo pedido requiere una consulta adicional dirigida**: `ReportePedidoItem` no incluye `direccionEntrega` ni `telefonoContacto` (campos que sí pide la tarjeta destacada). Una vez elegido el próximo pedido (paso anterior, sin costo adicional), se hace **una única** llamada a `PedidosService.buscarPorId` (y otra a `ClientesService.buscarPorId` para el nombre del cliente) — nunca por cada fila de la lista, solo para el pedido efectivamente destacado.
+5. **"Acciones rápidas" vs. Sidebar**: a diferencia del Dashboard del Administrador (Fase 10, donde toda opción posible ya tenía una entrada en el Sidebar), el Sidebar del Motorizado no tiene ningún ítem de "Incidentes" — por lo que "Registrar Incidente" como acceso rápido no duplica nada. "Ver Mis Pedidos"/"Ver Historial" sí apuntan a rutas ya visibles en el Sidebar; se mantuvieron con el mismo criterio ya aprobado en la Fase 10 (etiquetas de acción, no de sección, aunque el destino final coincida).
+
+### Tipos creados
+
+- `src/types/rider-dashboard.ts` — `RiderDashboardKpis` (5 campos, todos `number | null`), `RiderProximoPedido`, `RiderDashboardData` (incluye `tienePerfil: boolean` para el caso de un usuario motorizado sin perfil operativo, igual que Mis Pedidos/Historial desde la Fase 8).
+
+### Servicio creado
+
+- `src/services/rider-dashboard.service.ts` — `RiderDashboardService.obtenerDashboard()`.
+
+### KPIs implementados (5, con la fórmula exacta de cada uno)
+
+| KPI                    | Fuente                          | Cálculo                                                                    |
+| ---------------------- | ------------------------------- | -------------------------------------------------------------------------- |
+| Pedidos pendientes     | `reportePedidos` (motorizadoId) | `estado === 'asignado'`                                                    |
+| Pedidos en ruta        | `reportePedidos` (motorizadoId) | `estado === 'en_ruta'`                                                     |
+| Entregados hoy         | `reportePedidos` (motorizadoId) | `estado === 'entregado' && creadoEn` es hoy (aproximación, ver decisión 1) |
+| Atendidos hoy          | `reportePedidos` (motorizadoId) | `creadoEn` es hoy, cualquier estado                                        |
+| Incidentes registrados | `incidentes` (motorizadoId)     | `total` (histórico completo, ver decisión 2)                               |
+
+### Widgets implementados
+
+- **KPIs**: 5 `StatCard` (misma infraestructura extendida en la Fase 9: `loading`/`variant`/`description`), con `variant: 'danger'` + "No se pudo obtener" en el indicador puntual que falló.
+- **Mi próximo pedido**: `Card` destacada con código, cliente, dirección, teléfono, estado (`Badge`) y un enlace "Ir a Mis Pedidos" (`/rider/mis-pedidos`, navegación SPA). Si no hay ningún pedido activo, `EmptyState` — nunca se inventa un pedido.
+- **Mis pedidos recientes**: `DataTable` con los 5 más recientes (cualquier estado) del motorizado autenticado — nunca de otros motorizados (filtrado real de backend por `motorizadoId`, no en el cliente). Sin paginación (mismo criterio que el Dashboard del Administrador: "si basta con mostrar los últimos registros, no paginar").
+- **Actividad reciente**: reutiliza el mismo arreglo de pedidos recientes ya obtenido (cero solicitudes adicionales), igual que la decisión ya documentada en la Fase 10 para el Dashboard del Administrador — no existe un endpoint de actividad/historial global, así que se reutiliza la mejor información real disponible.
+- **Acciones rápidas**: "Ver Mis Pedidos", "Ver Historial", "Registrar Incidente" (ver decisión 5).
+
+### Componente corregido durante esta fase
+
+Al construir el enlace "Ir a Mis Pedidos" de la tarjeta "Mi próximo pedido" se detectó que anidar un `Button` (que renderiza un `<button>` real) dentro de un `<a data-link>` produce HTML inválido (contenido interactivo anidado en contenido interactivo, prohibido por la especificación HTML5, con comportamiento de foco/clic inconsistente entre navegadores). Se corrigió construyendo el enlace directamente con las clases visuales de `Button` (`BUTTON_VARIANT_CLASSES`, ya exportado desde la Fase 1 para que `IconButton` las reutilice) en vez de anidar el componente — mismo aspecto visual, HTML válido. No se creó ningún componente nuevo.
+
+### Componentes reutilizados sin cambios
+
+`StatCard`, `Card`, `DataTable`, `Loader`, `EmptyState`, `Badge`, `PageHeader`, `Breadcrumb` (vía `PageHeader`), `Section`, `Icon`. Ninguno duplicado ni específico de este módulo.
+
+### Infraestructura reutilizada
+
+`ESTADO_PEDIDO_LABEL`/`ESTADO_PEDIDO_BADGE_VARIANT` (Fase 8), el patrón de servicio fachada (`*DashboardService`, Fase 10), `MotorizadosService.buscarPorUsuarioId` (Fase 8).
+
+### Endpoints consumidos
+
+`GET /perfiles-motorizados` (con `usuarioId`), `GET /reportes/pedidos` (con `motorizadoId`), `GET /incidentes` (con `motorizadoId`), `GET /pedidos/:id`, `GET /clientes/:id`. Ninguno nuevo.
+
+### Limpieza adicional (consecuencia directa de esta fase)
+
+Con `/rider/dashboard` implementado, **ya no queda ninguna ruta placeholder en todo el proyecto** (Admin y Rider tienen pantallas reales en sus 15 rutas combinadas). Se eliminó la función `registerPlaceholder` de `main.ts` (y el import de `PlaceholderPage` que solo ella usaba) al quedar sin ningún llamador — `tsc` la señaló como código muerto. `src/pages/placeholder-page.ts` se conserva como infraestructura disponible para cualquier módulo futuro que empiece sin pantalla real, siguiendo la convención ya documentada en `CLAUDE.md`.
+
+### Pruebas realizadas
+
+Contra el backend real, vía curl reproduciendo exactamente las llamadas de `RiderDashboardService` para la cuenta de prueba `moto_f8` (perfil id 14):
+
+- Resolución del perfil por `usuarioId` (200).
+- `reportePedidos` filtrado por `motorizadoId=14` (3 resultados, verificados campo por campo).
+- KPIs recalculados a mano a partir de esos 3 resultados y contrastados con la lógica de `computeKpis`: 1 pendiente, 0 en ruta, 0 entregados hoy, 0 atendidos hoy (todos los pedidos de prueba fueron creados un día anterior a la fecha actual del sistema, confirmando que el filtro de "hoy" excluye correctamente datos de otros días), 2 incidentes.
+- Selección del próximo pedido (único candidato activo: el `asignado`) y su detalle completo (`GET /pedidos/:id`, `GET /clientes/:id`) verificados contra la respuesta real.
+- `npx tsc --noEmit`, `npx eslint .`, `npx prettier --check .` (formateado con `--write`), `npm run build` — los cuatro sin errores.
+- Servidor de desarrollo verificado por HTTP: los archivos nuevos/modificados se transforman sin error; `/rider/dashboard` sirve `200`.
+
+**Limitación de esta verificación (igual que en fases anteriores)**: no hay herramienta de automatización de navegador en este entorno. La interacción visual completa (KPIs con estado de carga, tarjeta destacada, tabla, actividad, accesos rápidos, responsive, dark mode) **no se verificó visualmente por mí** — se verificó por lectura exhaustiva del código y simulación exacta de las llamadas HTTP subyacentes vía curl. Se recomienda al usuario verificar manualmente antes de dar la fase por cerrada.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173** → `moto_f8` / `Passw0rd!` → `/rider/dashboard`.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante (el único hallazgo real — el `<button>` anidado en `<a>` — se corrigió en el mismo desarrollo de esta fase, ver arriba).
+
+### Trabajo pendiente (explícitamente fuera de esta fase)
+
+- Verificación visual interactiva completa por parte del usuario.
+
+## Fase 13 — Responsive Completo (Desktop, Tablet y Mobile)
+
+Adaptación integral del frontend (Admin + Rider + páginas generales) a Desktop/Tablet/Mobile, sin tocar backend/base de datos ni agregar funcionalidades nuevas. Objetivo explícito: Desktop conserva exactamente el diseño actual; Mobile/Tablet dejan de requerir zoom o scroll horizontal salvo donde el propio brief lo autoriza (tablas del panel Administrador).
+
+### Hallazgo de partida: no existía navegación en mobile
+
+El `Sidebar` se ocultaba por completo por debajo de `lg` (`hidden ... lg:flex`) y no existía ningún disparador alternativo — por debajo de 1024px de ancho, ningún usuario (Admin ni Motorizado) tenía forma de navegar entre módulos. Esta fase lo resuelve como prioridad número uno.
+
+### Archivos modificados (componentes/infraestructura compartida)
+
+- `index.html` — `viewport-fit=cover` agregado al meta viewport (requisito indispensable para que `env(safe-area-inset-*)` resuelva a un valor distinto de cero; sin este flag, todos los `env()` usados más abajo son siempre `0`, es decir, transparentes en cualquier navegador/dispositivo sin notch).
+- `src/components/sidebar/sidebar.ts` — reescrito para comportarse como Drawer por debajo de `lg` (ver detalle abajo). Mismo componente, mismo array de `items`; cero duplicación entre Admin y Rider.
+- `src/components/navbar/navbar.ts` — nuevo prop opcional `onMenuClick`; si se provee, renderiza un botón hamburguesa (`Menu` de lucide) visible solo `lg:hidden`, antes del logo. `AuthLayout` no lo usa (no tiene Sidebar) y sigue funcionando sin cambios. Altura fija `h-16` reemplazada por `min-h-16` + `padding` (ver Safe Areas).
+- `src/layouts/admin/admin-layout.ts` / `src/layouts/rider/rider-layout.ts` — el `Sidebar` se construye antes que el `Navbar` (para poder pasarle `onMenuClick: () => sidebar.toggleDrawer()`); `mount` recibe padding horizontal consciente de Safe Area.
+- `src/layouts/auth/auth-layout.ts` — mismo tratamiento de Safe Area que Admin/Rider (no tiene Sidebar, pero sí header/footer que tocan los bordes de la pantalla).
+- `src/components/footer/footer.ts`, `src/components/modal/modal.ts` — padding con Safe Area (ver sección dedicada).
+- `src/components/datatable/datatable.ts` — nueva estrategia responsive automática (ver detalle abajo).
+- `src/components/button/icon-button.ts`, `src/components/pagination/pagination.ts`, `src/components/checkbox/checkbox.ts` — mejoras de área táctil (ver sección dedicada).
+- `src/components/report-filters/report-filters.ts` — corrección de un desbordamiento horizontal real en 320-375px (ver Bugs encontrados).
+- `src/components/tooltip/tooltip.ts` — corrección de posible desbordamiento de viewport (ver Bugs encontrados).
+- `src/pages/rider/mis-pedidos/confirmar-entrega-form.ts` — corrección de un desbordamiento horizontal real en la fila de foto (ver Bugs encontrados).
+
+### Sidebar → Drawer (Fase 13): un único componente, dos comportamientos por breakpoint
+
+- **Desktop (`lg` y superior)**: exactamente el mismo comportamiento colapsable de la Fase 2 (barra estática, botón "Colapsar", estado persistido en `localStorage`). Cero cambios visuales.
+- **Mobile/Tablet (`< lg`)**: el mismo `<aside>` pasa a ser `position: fixed`, oculto fuera de pantalla (`-translate-x-full`) por defecto, con un backdrop semitransparente. Se abre con `sidebar.toggleDrawer()` (invocado por el botón hamburguesa del `Navbar`) y se cierra: (a) al elegir cualquier opción de navegación, (b) al tocar el backdrop, (c) con `Escape`, (d) con el botón "X" propio del Drawer (visible solo en mobile). Transición de 200ms, mismo lenguaje de animación que `Modal`.
+- El estado "colapsado" (icono-solo) es exclusivo de Desktop: en el Drawer las etiquetas de texto siempre son visibles, sin importar el valor persistido — se logra alternando la clase `lg:hidden` (no `hidden`) sobre las etiquetas.
+- **Arquitectura sin duplicar el layout de Admin/Rider**: `SidebarHandle.element` es ahora un `<div class="contents">` que envuelve `<aside>` + backdrop. `display: contents` hace que ese wrapper no participe del `flex` de `AdminLayout`/`RiderLayout` — sus hijos se comportan como si fueran hijos directos, exactamente como antes de esta fase. Ningún layout necesitó reestructurarse más allá de pasar `onMenuClick`.
+
+### DataTable: estrategia responsive única para todo el proyecto
+
+- **Decisión**: por debajo de `sm` (640px), la tabla se sustituye automáticamente por una lista de tarjetas apiladas — una tarjeta por fila, generada a partir de las mismas `columns` que ya recibía `DataTable`. **Ninguna página cambió una sola línea**: es una capacidad nueva del componente compartido, no una solución por página.
+- **Regla de generación de la tarjeta** (deducida de la convención ya presente en las ~10 tablas del proyecto, verificada antes de implementar): la primera columna con `header` no vacío es el título de la tarjeta; una columna con `header: ''` (la convención ya usada en todo el proyecto para alojar `RowActions`) se ubica junto al título; el resto se apila como pares "etiqueta: valor". No se omite ninguna columna — mismo contenido exacto que la tabla, solo con otra disposición visual.
+- **Ambos árboles (tabla y lista de tarjetas) conviven en el DOM**; Tailwind (`hidden sm:block` / `sm:hidden`) decide cuál se ve según el ancho de pantalla — sin JavaScript, sin `resize` listeners, sin riesgo de desincronización entre el estado "que se ve" y el ancho real de la ventana.
+- **Admin conserva también, en tablas anchas, la opción de scroll horizontal** (el `overflow-x-auto` del wrapper no se quitó): en `sm`-`lg` con muchas columnas, la tabla real (no la de tarjetas) sigue siendo la que se ve, y sigue pudiendo scrollear horizontalmente si hace falta — el brief autoriza explícitamente esta solución para el panel Administrativo.
+- Estados de `loading`/`error`/`vacío` no se duplicaron (siguen usando `Skeleton`/`EmptyState` tal cual, ya responsive por sí mismos) — solo la fila de datos real tiene doble representación.
+- `Dropdown` (usado por `RowActions` dentro de la celda/tarjeta de acciones) no requirió ningún cambio: al ser un Portal a `document.body` (Fase 11/Bugfix), funciona igual sin importar si su trigger vive dentro de un `<td>` o de una tarjeta.
+
+### Touch targets (44×44 aproximado, sin alterar el diseño Desktop)
+
+- **`IconButton` tamaño `md`** (usado en `Navbar`: tema, notificaciones, hamburguesa): de 40px a 44px (`h-11 w-11`) — único tamaño exacto a la recomendación, cambio de 4px prácticamente imperceptible en Desktop.
+- **`IconButton` tamaño `sm`** (usado en `RowActions`, foto a eliminar en "Confirmar entrega"): se mantiene visualmente en 32px (agrandarlo rompería el ritmo vertical de filas densas de tabla), pero gana un área de toque invisible de 44×44 centrada vía un pseudo-elemento `::before` (`before:absolute before:h-11 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-['']`) — técnica recomendada explícitamente por el brief ("incrementar únicamente el área clicable mediante padding o ajustes de layout"). Se aplicó solo donde el botón está aislado (nunca pegado a otro control), para no generar zonas invisibles superpuestas entre botones vecinos.
+- **`Pagination`**: los botones de página pasaron de 32px a 36px reales (no área invisible): al estar pegados unos a otros, un área de toque invisible se superpondría entre botones vecinos y causaría pulsaciones accidentales — se priorizó la recomendación del propio brief de "separación suficiente entre elementos táctiles" sobre el método de padding invisible.
+- **`Checkbox`**: la fila `<label>` (checkbox de 16px + texto) ganó `py-2` — el checkbox visual no cambia de tamaño, pero toda la fila (la que realmente recibe el toque, al ser un `<label>`) es más alta.
+- **`Sidebar`/Drawer**: los ítems de navegación pasaron de `py-2` a `py-2.5`; el botón de cerrar el Drawer es `h-11 w-11` (44px) — el panel del Motorizado, con prioridad absoluta según el brief, es el principal beneficiario (es su única navegación en mobile).
+
+### Safe Areas (notch / Dynamic Island / barras gestuales)
+
+- Se agregó `viewport-fit=cover` en `index.html` (requisito técnico de la spec CSS `env()` — sin él, todos los valores son `0` igualmente, o sea, transparente para cualquier dispositivo actual sin PWA/notch).
+- Aplicado con `env(safe-area-inset-*)` (siempre combinado con `max()`/`calc()` sobre el padding ya existente, nunca reemplazándolo — así el valor final en un dispositivo sin notch es idéntico al de antes de esta fase): `Navbar` (top), `Footer` (bottom), `AuthLayout` header (top) y su contenedor central (left/right), `Sidebar` Drawer (bottom/left, solo mobile), `Modal` (los 4 lados, mobile con el panel a pantalla casi completa), `mount` de Admin/Rider (left/right, para landscape con notch lateral).
+- **Efecto en cualquier navegador/dispositivo sin notch (Desktop y la inmensa mayoría de móviles hoy)**: exactamente cero — `env(safe-area-inset-*)` vale `0`, y `max(1rem, 0)` = `1rem`, el mismo padding que ya existía.
+- No se agregó ningún manifest/configuración PWA nueva (fuera de alcance) — la implementación queda lista para el caso en que el proyecto se instale como PWA en un dispositivo con notch, sin ningún efecto visual mientras eso no ocurra.
+
+### Formularios y Modal: ya cumplían sin cambios
+
+- **Formularios**: los ~10 formularios del proyecto (`buildUsuarioForm`, `buildPedidoForm`, etc.) ya usan `flex flex-col gap-4` (una sola columna) en todos los casos — ya se apilan verticalmente en mobile y no generan scroll horizontal. No existía ningún formulario con grid multi-columna que "romper" en mobile, así que no se introdujo ninguno nuevo (el brief permite pero no exige columnas en Desktop; agregar una hoy sería un cambio visual de Desktop no solicitado).
+- **Modal**: ya usaba `w-full` + `max-h-[85vh]` + `overflow-y-auto` interno (corrección de la Fase 7) — en mobile el panel ya ocupa el ancho casi completo (menos el margen de seguridad `p-4`) con scroll interno y sin cortar contenido. Esta fase solo le agregó Safe Area (ver arriba); ningún otro cambio fue necesario.
+
+### Bugs de responsive encontrados y corregidos (código ya existente, no introducidos por Fase 12)
+
+1. **`ReportFilters` (usado por los 3 Reportes): el par de campos "Desde"/"Hasta" no envolvía.** Cada campo medía `w-40` (10rem) dentro de un `flex gap-3` sin `flex-wrap`: en 320-375px de ancho, el par completo (20rem + gap) no entraba en una sola fila y generaba scroll horizontal / requería zoom. Corregido: `flex-wrap` en el contenedor del par + anchos `w-36 sm:w-40` (en mobile, si no entran uno junto al otro, "Hasta" pasa a la línea siguiente en vez de desbordar). Los campos `select`/`search` de `ReportFilters` (`w-52`/`w-56`) se dejaron con `w-full max-w-56` como base, `sm:w-52`/`sm:w-56` desde tablet — incluso dentro de su contenedor ya-wrap, un ancho fijo podía acercarse al límite en 320px exactos.
+2. **`Tooltip`: sin límite de ancho ni consciencia del viewport.** A diferencia de `Dropdown` (Portal + `computeFloatingPosition`, Fase 11), `Tooltip` es puramente CSS (`group-hover`) y no mide el espacio disponible; un `content` largo cerca de un borde angosto podía salirse de la pantalla. Corregido con `max-w-[calc(100vw-1rem)]` + `whitespace-normal` (antes `whitespace-nowrap` sin límite) — no se migró a Portal (uso exclusivamente de hover/Desktop, en el Drawer mobile el Sidebar siempre muestra las etiquetas completas y el Tooltip no llega a dispararse).
+3. **`confirmar-entrega-form.ts` (panel del Motorizado, pantalla de "Confirmar entrega"): la fila de cada foto no envolvía.** `Input` (flexible) + `Checkbox` "Principal" + botón eliminar convivían en un `flex items-end gap-3` sin `flex-wrap` ni `min-w-0` en el input — en 320-375px el campo de URL quedaba comprimido a un ancho iletgible o la fila desbordaba. Corregido: `flex-wrap` + `min-w-0` en el input + `basis-full sm:basis-auto` (en mobile el campo URL ocupa toda la fila y el par checkbox/eliminar pasa a la línea siguiente; en Desktop, comportamiento idéntico al anterior).
+
+### Componentes/páginas auditados sin cambios necesarios
+
+Revisión exhaustiva de todas las páginas listadas en el alcance (Dashboard/Usuarios/Tiendas/Sucursales/Clientes/Motorizados/Pedidos/Incidentes/Reportes/Mi Perfil en Admin; Dashboard/Mis Pedidos/Historial/Mi Perfil en Rider; Login) y de los componentes generales restantes (`Textarea`, `DetailList`, `EmptyState`, `Loader`, `Skeleton`, `Toast`, `Alert`, `Icon`, `RowActions`, formularios de Tiendas/Sucursales/Clientes/Motorizados, `PedidoFotos`, `PedidoHistorial`, `IncidenteForm`, Reporte de Entregas/Productividad): todos ya usaban grids con quiebre responsive (`grid-cols-1 sm:grid-cols-2 ...`), `ResourceTable`/`DataTable` (ahora responsive por herencia, sin cambios propios) o `flex-wrap`, sin anchos fijos fuera de un contenedor que envuelva. No se modificó ninguno.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint .`, `npx prettier --write .` (solo reformateo, sin cambios funcionales), `npm run build` — los cuatro sin errores.
+- Verificación de que las utilidades de Tailwind nuevas/menos habituales realmente compilaron en el CSS de producción (`display:contents`, pseudo-elementos `::before` con `content:var(--tw-content)`, los 4 `env(safe-area-inset-*)`, `-translate-x-full`, `h-11`, `min-h-16`) — confirmado en `dist/assets/index-*.css`.
+- Servidor de desarrollo y backend verificados por HTTP (`200` en ambos) tras todos los cambios.
+
+**Limitación de esta verificación (igual que en fases anteriores)**: no hay herramienta de automatización de navegador en este entorno. La verificación visual real en los anchos pedidos (320/360/375/390/414/768/1024/1280/1440px), landscape/portrait y dark mode **no se realizó visualmente por mí** — se hizo por lectura exhaustiva de cada archivo tocado, del CSS compilado, y razonamiento explícito sobre el comportamiento de cada clase Tailwind en cada breakpoint. Se recomienda al usuario verificar manualmente antes de dar la fase por cerrada.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante. Los 3 bugs de responsive preexistentes (`ReportFilters`, `Tooltip`, `confirmar-entrega-form.ts`) se corrigieron en el mismo desarrollo de esta fase, ver sección dedicada arriba.
+
+### Trabajo pendiente (explícitamente fuera de esta fase)
+
+- Verificación visual interactiva completa por parte del usuario en los anchos/orientaciones/temas listados en el brief.
+- Auditoría final: **no se inicia sin autorización explícita del usuario** (instrucción explícita del cierre de esta fase).
+
+**No se avanza a la auditoría final sin autorización explícita.**

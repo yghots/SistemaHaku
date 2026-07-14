@@ -23,19 +23,23 @@ export interface RiderLayoutHandle extends LayoutHandle {
 /** Layout del panel del Motorizado: Navbar + Sidebar + area principal + Footer (mismos componentes que AdminLayout, distinta navegacion). */
 export function RiderLayout(): RiderLayoutHandle {
   const currentUser = SessionService.getCurrentUser();
-  const navbar = Navbar({
-    appName: env.appName,
-    userName: currentUser?.usuario ?? 'Motorizado',
-    profileHref: '/rider/perfil',
-    onLogout: logout,
-  });
   const sidebar = Sidebar({
     items: RIDER_NAV_ITEMS,
     currentPath: window.location.pathname,
     storageKey: 'haku-sidebar-collapsed-rider',
   });
+  const navbar = Navbar({
+    appName: env.appName,
+    userName: currentUser?.usuario ?? 'Motorizado',
+    profileHref: '/rider/perfil',
+    onLogout: logout,
+    onMenuClick: () => sidebar.toggleDrawer(),
+  });
 
-  const mount = el('main', { className: 'flex-1 overflow-y-auto p-4 sm:p-6' });
+  const mount = el('main', {
+    className:
+      'flex-1 overflow-y-auto p-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6',
+  });
 
   const content = el(
     'div',

@@ -62,10 +62,14 @@ export function buildConfirmarEntregaForm(): ConfirmarEntregaFormHandle {
 
     const rowEl = el(
       'div',
-      { className: 'flex items-end gap-3' },
-      el('div', { className: 'flex-1' }, urlInput.wrapper),
-      principalCheckbox.wrapper,
-      rows.length > 0 ? removeButton : null,
+      { className: 'flex flex-wrap items-end gap-3' },
+      el('div', { className: 'min-w-0 flex-1 basis-full sm:basis-auto' }, urlInput.wrapper),
+      el(
+        'div',
+        { className: 'flex items-end gap-1' },
+        principalCheckbox.wrapper,
+        rows.length > 0 ? removeButton : null,
+      ),
     );
 
     rows.push({ rowEl, urlInput, principalCheckbox });

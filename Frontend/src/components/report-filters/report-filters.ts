@@ -72,11 +72,16 @@ export function ReportFilters({ fields, onApply }: ReportFiltersProps): ReportFi
       });
       inputsByName.set(field.nameDesde, desde);
       inputsByName.set(field.nameHasta, hasta);
+      // `flex-wrap`: en ~320-360px de ancho dos campos de 9rem con gap no
+      // entran en una sola fila sin desbordar horizontalmente (el
+      // contenedor externo ya envuelve, pero como par no lo hacia) — al
+      // envolver aca tambien, "Hasta" pasa a la siguiente linea en vez de
+      // forzar scroll horizontal.
       return el(
         'div',
-        { className: 'flex gap-3' },
-        el('div', { className: 'w-40' }, desde.wrapper),
-        el('div', { className: 'w-40' }, hasta.wrapper),
+        { className: 'flex flex-wrap gap-3' },
+        el('div', { className: 'w-36 sm:w-40' }, desde.wrapper),
+        el('div', { className: 'w-36 sm:w-40' }, hasta.wrapper),
       );
     }
 
@@ -88,7 +93,7 @@ export function ReportFilters({ fields, onApply }: ReportFiltersProps): ReportFi
         options: field.options,
       });
       selectsByName.set(field.name, select);
-      return el('div', { className: 'w-52' }, select.wrapper);
+      return el('div', { className: 'w-full max-w-56 sm:w-52' }, select.wrapper);
     }
 
     const search = Input({
@@ -97,7 +102,7 @@ export function ReportFilters({ fields, onApply }: ReportFiltersProps): ReportFi
       placeholder: field.placeholder,
     });
     inputsByName.set(field.name, search);
-    return el('div', { className: 'w-56' }, search.wrapper);
+    return el('div', { className: 'w-full max-w-56 sm:w-56' }, search.wrapper);
   }
 
   function collectValues(): Record<string, string> {

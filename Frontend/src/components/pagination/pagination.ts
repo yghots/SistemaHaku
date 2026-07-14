@@ -12,7 +12,13 @@ export interface PaginationProps {
 
 function pageButtonClasses(active: boolean): string {
   return cn(
-    'inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-medium transition-colors',
+    // 36px en vez de los 44px recomendados: a diferencia de un boton de
+    // icono aislado, estos botones estan pegados unos a otros — un area
+    // de toque invisible mas grande (la tecnica usada en IconButton `sm`)
+    // se superpondria entre botones vecinos y causaria pulsaciones
+    // accidentales. Se prioriza "separacion suficiente entre elementos
+    // tactiles" agrandando el boton real un poco en vez de invisiblemente.
+    'inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-2.5 text-sm font-medium transition-colors',
     active
       ? 'bg-brand-600 text-white'
       : 'text-text-secondary hover:bg-surface-muted dark:hover:bg-white/10',
@@ -62,7 +68,7 @@ export function Pagination(props: PaginationProps): HTMLDivElement {
 
   return el(
     'div',
-    { className: cn('flex items-center gap-1', props.className) },
+    { className: cn('flex items-center gap-1.5', props.className) },
     prevButton,
     ...pageButtons,
     nextButton,
