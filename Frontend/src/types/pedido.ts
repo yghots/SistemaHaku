@@ -1,0 +1,144 @@
+/**
+ * Contrato exacto de Backend/src/modules/pedidos y
+ * Backend/src/modules/flujo-pedido (revisado directamente en el codigo
+ * fuente antes de escribir estos tipos: create-pedido.dto.ts,
+ * update-pedido.dto.ts, pedido-response.dto.ts, list-pedidos-query.dto.ts,
+ * y los DTOs de flujo-pedido: asignar/reasignar-motorizado,
+ * confirmar-recojo/entrega, iniciar-ruta, registrar-cliente-ausente/
+ * rechazo, cancelar-pedido, foto-entrega-input; y el enum `EstadoPedido`
+ * de prisma/schema.prisma).
+ *
+ * `sucursalId`, `clienteId` y `creadoPorId` son inmutables tras la
+ * creacion (el backend los excluye explicitamente de UpdatePedidoDto via
+ * OmitType) — el formulario de edicion nunca debe permitir cambiarlos.
+ *
+ * El flujo operativo (Fase 8) vive bajo `/pedidos/:id/<accion>` en el
+ * backend (modulo `flujo-pedido`), pero conceptualmente pertenece a
+ * Pedidos: sus tipos y su consumo (`PedidosService`) viven aqui, sin crear
+ * un "FlujoPedidoService" aparte.
+ */
+
+export type EstadoPedido =
+  | 'pendiente'
+  | 'asignado'
+  | 'recogido'
+  | 'en_ruta'
+  | 'entregado'
+  | 'cancelado'
+  | 'reprogramado'
+  | 'devuelto'
+  | 'rechazado'
+  | 'cliente_ausente';
+
+/** Igual a PedidoResponseDto. Los montos llegan como string (Decimal serializado por Prisma), nunca number. */
+export interface Pedido {
+  id: string;
+  codigoPedido: string;
+  sucursalId: string;
+  clienteId: string;
+  motorizadoActualId: string | null;
+  creadoPorId: string;
+  direccionEntrega: string;
+  telefonoContacto: string | null;
+  descripcionProducto: string | null;
+  valorProducto: string | null;
+  costoEnvio: string | null;
+  estado: EstadoPedido;
+  observaciones: string | null;
+  creadoEn: string;
+}
+
+/** Igual a CreatePedidoDto. */
+export interface CreatePedidoPayload {
+  sucursalId: number;
+  clienteId: number;
+  creadoPorId: number;
+  direccionEntrega: string;
+  telefonoContacto?: string;
+  descripcionProducto?: string;
+  valorProducto?: number;
+  costoEnvio?: number;
+  observaciones?: string;
+}
+
+/** Igual a UpdatePedidoDto = PartialType(OmitType(CreatePedidoDto, ['sucursalId','clienteId','creadoPorId'])). */
+export interface UpdatePedidoPayload {
+  direccionEntrega?: string;
+  telefonoContacto?: string;
+  descripcionProducto?: string;
+  valorProducto?: number;
+  costoEnvio?: number;
+  observaciones?: string;
+}
+
+/** Igual a ListPedidosQueryDto. `fechaDesde`/`fechaHasta` no tienen control de UI en esta fase (ver FRONTEND_PROGRESS.md Fase 7). */
+export interface ListPedidosParams {
+  page: number;
+  limit: number;
+  codigoPedido?: string;
+  clienteId?: number;
+  sucursalId?: number;
+  estado?: EstadoPedido;
+  fechaDesde?: string;
+  fechaHasta?: string;
+}
+
+/**
+ * Estados desde los que el backend permite cancelar un pedido
+ * (`ESTADOS_CANCELABLES` en flujo-pedido.service.ts). Los estados
+ * terminales (entregado, cancelado, rechazado, devuelto, cliente_ausente,
+ * reprogramado) quedan excluidos — reflejado tal cual, no inventado.
+ */
+export const ESTADOS_CANCELABLES: EstadoPedido[] = ['pendiente', 'asignado', 'recogido', 'en_ruta'];
+
+/** Igual a AsignarMotorizadoDto. */
+export interface AsignarMotorizadoPayload {
+  motorizadoId: number;
+  usuarioId: number;
+}
+
+/** Igual a ReasignarMotorizadoDto. */
+export interface ReasignarMotorizadoPayload {
+  motorizadoAnteriorId: number;
+  motorizadoNuevoId: number;
+  usuarioId: number;
+}
+
+/** Igual a CancelarPedidoDto. */
+export interface CancelarPedidoPayload {
+  usuarioId: number;
+}
+
+/** Igual a ConfirmarRecojoDto. `urlImagen` es una URL de texto: el backend no acepta archivos, solo URLs ya almacenadas. */
+export interface ConfirmarRecojoPayload {
+  motorizadoId: number;
+  urlImagen: string;
+}
+
+/** Igual a IniciarRutaDto. */
+export interface IniciarRutaPayload {
+  motorizadoId: number;
+}
+
+/** Igual a FotoEntregaInputDto. */
+export interface FotoEntregaInput {
+  urlImagen: string;
+  esPrincipal?: boolean;
+}
+
+/** Igual a ConfirmarEntregaDto: exige al menos una foto. */
+export interface ConfirmarEntregaPayload {
+  motorizadoId: number;
+  fotos: FotoEntregaInput[];
+  observaciones?: string;
+}
+
+/** Igual a RegistrarClienteAusenteDto. */
+export interface RegistrarClienteAusentePayload {
+  motorizadoId: number;
+}
+
+/** Igual a RegistrarRechazoDto. */
+export interface RegistrarRechazoPayload {
+  motorizadoId: number;
+}

@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum RolUsuario {
+  administrador
+  motorizado
+}
+
+// "Disponible, ocupado, inactivo, etc." (doc 4.1) - conjunto cerrado acordado
+// con el cliente para esta fase; agregar valores despues es una migracion de
+// bajo riesgo.
+enum EstadoMotorizado {
+  disponible
+  ocupado
+  inactivo
+}
+
+// Flujo principal (doc 2.3): pendiente -> asignado -> recogido -> en_ruta -> entregado
+// Estados alternativos: cancelado, reprogramado, devuelto, rechazado, cliente_ausente
+enum EstadoPedido {
+  pendiente
+  asignado
+  recogido
+  en_ruta
+  entregado
+  cancelado
+  reprogramado
+  devuelto
+  rechazado
+  cliente_ausente
+}
+
+enum TipoEventoHistorial {
+  cambio_estado
+  reasignacion
+}
+
+enum TipoFoto {
+  recojo
+  entrega
+}
+
+// "Accidente, averia, dano al producto, etc." (doc 4.1) - conjunto cerrado
+// con valor de escape 'otro' para cubrir el "etc." de la documentacion.
+enum TipoIncidente {
+  accidente
+  averia
+  dano_producto
+  otro
+}
+
+// ---------------------------------------------------------------------------
+// Modelos
+// ---------------------------------------------------------------------------
+
+model Usuario {
+  id           BigInt     @id @default(autoincrement())
+  usuario      String     @unique @db.VarChar(50)
+  correo       String     @unique @db.VarChar(150)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  rol          RolUsuario
+  activo       Boolean    @default(true)
+  deletedAt    DateTime?  @map("deleted_at")
+
+  perfilMotorizado PerfilMotorizado?
+  pedidosCreados   Pedido[]          @relation("PedidosCreadosPorUsuario")
+  eventosHistorial HistorialPedido[] @relation("EventosRegistradosPorUsuario")
+
+  @@map("usuarios")
+}
+
+model Tienda {
+  id        BigInt    @id @default(autoincrement())
+  nombre    String    @db.VarChar(150)
+  ruc       String?   @db.VarChar(20)
+  activo    Boolean   @default(true)
+  deletedAt DateTime? @map("deleted_at")
+
+  sucursales Sucursal[]
+
+  @@map("tiendas")
+}
+
+model Sucursal {
+  id          BigInt    @id @default(autoincrement())
+  tiendaId    BigInt    @map("tienda_id")
+  nombre      String    @db.VarChar(150)
+  direccion   String    @db.VarChar(255)
+  referencia  String?   @db.VarChar(255)
+  telefono    String    @db.VarChar(20)
+  esPrincipal Boolean   @default(false) @map("es_principal")
+  deletedAt   DateTime? @map("deleted_at")
+
+  tienda  Tienda   @relation(fields: [tiendaId], references: [id], onDelete: Restrict)
+  pedidos Pedido[]
+
+  @@map("sucursales")
+}
+
+model Cliente {
+  id                 BigInt    @id @default(autoincrement())
+  nombreCompleto     String    @map("nombre_completo") @db.VarChar(150)
+  telefono           String    @db.VarChar(20)
+  direccion          String    @db.VarChar(255)
+  documentoIdentidad String?   @map("documento_identidad") @db.VarChar(20)
+  deletedAt          DateTime? @map("deleted_at")
+
+  pedidos Pedido[]
+
+  @@map("clientes")
+}
+
+model PerfilMotorizado {
+  id        BigInt           @id @default(autoincrement())
+  usuarioId BigInt           @unique @map("usuario_id")
+  placa     String           @db.VarChar(15)
+  estado    EstadoMotorizado @default(disponible)
+
+  usuario          Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  pedidosActuales  Pedido[]          @relation("MotorizadoActualDelPedido")
+  fotos            FotoEntrega[]
+  incidentes       Incidente[]
+  eventosHistorial HistorialPedido[] @relation("ReasignacionesDelMotorizado")
+
+  @@index([estado])
+  @@map("perfiles_motorizados")
+}
+
+model Pedido {
+  id                  BigInt       @id @default(autoincrement())
+  codigoPedido        String       @unique @map("codigo_pedido") @db.VarChar(30)
+  sucursalId          BigInt       @map("sucursal_id")
+  clienteId           BigInt       @map("cliente_id")
+  motorizadoActualId  BigInt?      @map("motorizado_actual_id")
+  creadoPorId         BigInt       @map("creado_por_id")
+  direccionEntrega    String       @map("direccion_entrega") @db.VarChar(255)
+  telefonoContacto    String?      @map("telefono_contacto") @db.VarChar(20)
+  descripcionProducto String?      @map("descripcion_producto") @db.VarChar(255)
+  valorProducto       Decimal?     @map("valor_producto") @db.Decimal(10, 2)
+  costoEnvio          Decimal?     @map("costo_envio") @db.Decimal(10, 2)
+  estado              EstadoPedido @default(pendiente)
+  observaciones       String?      @db.VarChar(500)
+  creadoEn            DateTime     @default(now()) @map("creado_en")
+
+  sucursal         Sucursal          @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cliente          Cliente           @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  motorizadoActual PerfilMotorizado? @relation("MotorizadoActualDelPedido", fields: [motorizadoActualId], references: [id], onDelete: SetNull)
+  creadoPor        Usuario           @relation("PedidosCreadosPorUsuario", fields: [creadoPorId], references: [id], onDelete: Restrict)
+
+  fotos      FotoEntrega[]
+  historial  HistorialPedido[]
+  incidentes Incidente[]
+
+  @@index([estado])
+  @@index([creadoEn])
+  @@map("pedidos")
+}
+
+model HistorialPedido {
+  id           BigInt              @id @default(autoincrement())
+  pedidoId     BigInt              @map("pedido_id")
+  tipoEvento   TipoEventoHistorial @map("tipo_evento")
+  estado       EstadoPedido?
+  motorizadoId BigInt?             @map("motorizado_id")
+  usuarioId    BigInt              @map("usuario_id")
+  createdAt    DateTime            @default(now()) @map("created_at")
+
+  pedido     Pedido            @relation(fields: [pedidoId], references: [id], onDelete: Restrict)
+  motorizado PerfilMotorizado? @relation("ReasignacionesDelMotorizado", fields: [motorizadoId], references: [id], onDelete: SetNull)
+  usuario    Usuario           @relation("EventosRegistradosPorUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([pedidoId, createdAt])
+  @@map("historial_pedido")
+}
+
+model FotoEntrega {
+  id           BigInt   @id @default(autoincrement())
+  pedidoId     BigInt   @map("pedido_id")
+  motorizadoId BigInt   @map("motorizado_id")
+  tipo         TipoFoto
+  urlImagen    String   @map("url_imagen") @db.VarChar(500)
+  esPrincipal  Boolean  @default(false) @map("es_principal")
+
+  pedido     Pedido           @relation(fields: [pedidoId], references: [id], onDelete: Restrict)
+  motorizado PerfilMotorizado @relation(fields: [motorizadoId], references: [id], onDelete: Restrict)
+
+  @@index([pedidoId, tipo])
+  @@map("fotos_entrega")
+}
+
+model Incidente {
+  id           BigInt        @id @default(autoincrement())
+  pedidoId     BigInt?       @map("pedido_id")
+  motorizadoId BigInt        @map("motorizado_id")
+  tipo         TipoIncidente
+  resuelto     Boolean       @default(false)
+
+  pedido     Pedido?          @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  motorizado PerfilMotorizado @relation(fields: [motorizadoId], references: [id], onDelete: Restrict)
+
+  @@index([motorizadoId, resuelto])
+  @@map("incidentes")
+}

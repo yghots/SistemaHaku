@@ -1,0 +1,2119 @@
+# HAKU Courier — Backend — Registro de Desarrollo
+
+## Fase 1 — Inicialización y configuración del proyecto
+
+**Fecha:** 2026-07-12
+
+## Objetivo del proyecto
+
+Backend del sistema HAKU Courier: automatizar la gestión y logística de una
+empresa de delivery/courier (recepción de pedidos, asignación de motorizados,
+seguimiento de recojo/entrega y reportes), según lo descrito en
+`Documentacion_HAKU_Courier(1).docx` y el diagrama entidad-relación provisto.
+
+Roles del sistema: **Administrador** (único rol administrativo) y
+**Motorizado**. Tienda y Cliente participan en el proceso de negocio pero no
+acceden al sistema.
+
+## Alcance de esta fase
+
+Únicamente inicialización y configuración de infraestructura. **No** se
+implementó Prisma schema de negocio, CRUD, autenticación ni entidades. Eso
+corresponde a la Fase 2, pendiente de autorización.
+
+## Arquitectura elegida
+
+Clean Architecture sobre NestJS 11, organizada por capas + módulos verticales:
+
+```
+src/
+  common/        → cross-cutting: filters, interceptors, guards, decorators,
+                   middlewares, pipes, dto (base), utils
+  config/        → configuration.ts (config tipada) y env.validation.ts
+                   (validación de entorno con class-validator)
+  modules/        → vacío, listo para los módulos de negocio (Fase 2+). Cada
+                   módulo futuro (pedidos, usuarios, tiendas, etc.) contendrá
+                   internamente sus propios controllers, services,
+                   repositories, dto, entities e interfaces (convención
+                   estándar de Nest, no carpetas planas por capa a nivel raíz)
+  prisma/        → PrismaModule + PrismaService (infraestructura de acceso
+                   a datos, sin modelos de negocio todavía)
+  shared/        → interfaces/ y constants/ reutilizables entre módulos
+  app.module.ts
+  main.ts
+```
+
+Las carpetas vacías (`common/decorators`, `common/guards`,
+`common/middlewares`, `common/pipes`, `common/dto`, `common/utils`,
+`shared/interfaces`, `shared/constants`, `modules/`) tienen un `.gitkeep` con
+una línea explicando su propósito futuro.
+
+## Decisiones técnicas tomadas
+
+- **NestJS 11 (última estable)** generado con `nest new --strict`, package
+  manager npm.
+- **Prisma 7.8.0**, generador `provider = "prisma-client-js"` **sin** `output`
+  personalizado → el cliente se genera en `node_modules/@prisma/client`
+  (ubicación por defecto). Se probó primero el nuevo generador
+  `"prisma-client"` (ESM-first) con `output` custom, pero produce archivos
+  `.ts` fuente (no un paquete pre-compilado) que rompen al recompilarlos con
+  el `tsc` de Nest (mezcla `import.meta` con salida CommonJS). El generador
+  clásico `prisma-client-js` evita ese problema y es totalmente compatible
+  con el proyecto CommonJS de Nest.
+- **Prisma 7 eliminó `url` del bloque `datasource`** del schema — ya no es
+  válido `url = env("DATABASE_URL")`. La conexión ahora se pasa en runtime al
+  constructor de `PrismaClient` vía un **driver adapter**. Se usó
+  `@prisma/adapter-mariadb` (compatible con MySQL) inyectando la
+  `DATABASE_URL` a través de `ConfigService` en `PrismaService`
+  ([prisma.service.ts](src/prisma/prisma.service.ts)).
+- `prisma.config.ts` (generado por `prisma init`) define la `DATABASE_URL`
+  que usará la **CLI** de Prisma (`migrate`, `studio`, etc.); es independiente
+  de cómo el `PrismaService` obtiene la URL en runtime.
+- **`DATABASE_URL` usa `127.0.0.1` en vez de `localhost`**: con `localhost`
+  se observó una demora intermitente de ~10s en la primera conexión
+  (resolución DNS/networking de Docker Desktop en Windows). Con la IP literal
+  la conexión es inmediata.
+- **Sin alias de imports (`@common/*`, etc.)**: se evaluó, pero el compilador
+  por defecto de Nest (`tsc`) no reescribe alias en el build de producción sin
+  una dependencia adicional (`tsc-alias`) y coordinación extra en modo watch.
+  Con la profundidad de carpetas actual no aporta suficiente valor para
+  justificar esa complejidad. Se puede reconsiderar cuando existan varios
+  módulos anidados y los imports relativos (`../../../`) se vuelvan
+  incómodos.
+- **Base de datos apuntada:** contenedor Docker `mysql` ya existente
+  (`mysql:latest`, puerto 3306 expuesto), base de datos `delivery_system`
+  (ya existía en el contenedor). Se usó el usuario `root` para desarrollo
+  local; **antes de producción se debe crear un usuario de MySQL con
+  privilegios mínimos** dedicado a la aplicación.
+- `.gitignore` generado por `prisma init` sobrescribió el `.gitignore` por
+  defecto de Nest (perdiendo `dist/`, `coverage/`, etc.). Se reconstruyó un
+  `.gitignore` completo para proyecto Nest + Prisma.
+- Corregido `start:prod` en `package.json`: el build de Nest compila con
+  `rootDir` inferido en la raíz del proyecto (por convivir `prisma.config.ts`
+  junto a `src/`), por lo que el entry point real queda en
+  `dist/src/main.js`, no `dist/main.js`.
+- Validación de entorno con `class-validator`/`class-transformer` (ya
+  requeridos por el proyecto) en vez de sumar Joi como dependencia nueva.
+
+## Inconsistencias detectadas (a resolver antes de Fase 2)
+
+1. **La base de datos `delivery_system` ya existente en el contenedor Docker
+   tiene un esquema legado** (`tablas: asignaciones, clientes, estados,
+   historial_estados, pedidos, repartidores, usuarios`) que **no coincide**
+   con el modelo de 9 tablas del ER actual (`usuarios, tiendas, sucursales,
+   clientes, perfiles_motorizados, pedidos, historial_pedido,
+   fotos_entrega, incidentes`). Antes de correr la primera migración de
+   Prisma en Fase 2 hay que decidir: recrear la base de datos desde cero,
+   o migrar/descartar los datos existentes.
+2. El documento funcional dice "el modelo final quedó compuesto por 8
+   tablas", pero tanto el documento como el diagrama ER detallan **9**
+   entidades (`USUARIOS, TIENDAS, SUCURSALES, CLIENTES,
+   PERFILES_MOTORIZADOS, PEDIDOS, HISTORIAL_PEDIDO, FOTOS_ENTREGA,
+   INCIDENTES`). Aparente error de conteo en la documentación, no afecta el
+   modelo en sí.
+3. El campo `password_hash` en `USUARIOS` está marcado como "NUEVO" en el
+   diagrama pero no aparece descrito en el detalle de tablas del documento
+   (sección 4.1). Es evidentemente necesario para el login; se asume
+   correcto tal como está en el diagrama.
+
+Ninguna de estas bloquea la Fase 1 (no se tocó el schema ni la base de
+datos), pero **sí deben resolverse antes de definir el `schema.prisma` de
+negocio en la Fase 2**.
+
+## Dependencias instaladas
+
+**Runtime:** `@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`,
+`@nestjs/config`, `@nestjs/swagger`, `@prisma/client`,
+`@prisma/adapter-mariadb`, `class-validator`, `class-transformer`, `argon2`,
+`helmet`, `compression`, `dotenv`, `reflect-metadata`, `rxjs`.
+
+**Desarrollo:** `@nestjs/cli`, `@nestjs/schematics`, `@nestjs/testing`,
+`prisma`, `@types/compression`, `@types/express`, `@types/jest`,
+`@types/node`, `@types/supertest`, `eslint` (+ plugins), `prettier`, `jest`,
+`ts-jest`, `ts-loader`, `ts-node`, `tsconfig-paths`, `typescript`,
+`typescript-eslint`.
+
+Nota: `npm audit` reporta 3 vulnerabilidades moderadas transitivas de
+`@prisma/dev` (dependencia de desarrollo de Prisma Studio, no se usa en
+runtime de la app). No se fuerza el fix porque degradaría la versión de
+Prisma instalada.
+
+## Estado actual del desarrollo
+
+- Proyecto NestJS 11 creado y compilando sin errores (`npm run build`).
+- `tsc --noEmit` sin errores de TypeScript.
+- ESLint sin errores (`npm run lint`).
+- Tests por defecto (unit + e2e) pasando.
+- La aplicación arranca, se conecta a MySQL vía Prisma + driver adapter,
+  expone `GET /api/v1` (placeholder de Nest) y Swagger en `/api/docs`
+  (verificado manualmente en caliente).
+- Sin schema de negocio, sin entidades, sin autenticación, sin CRUD
+  (deliberadamente, según alcance de esta fase).
+
+## Tareas pendientes (arrastradas a Fase 3)
+
+- Diseñar los módulos de negocio dentro de `src/modules/` (pedidos,
+  usuarios/auth, tiendas, sucursales, clientes, motorizados, historial,
+  fotos, incidentes, reportes).
+- Implementar autenticación (Argon2 ya está instalado) y autorización por
+  rol (administrador / motorizado).
+- Crear un usuario de MySQL de mínimo privilegio para reemplazar `root` en
+  `DATABASE_URL` antes de cualquier entorno compartido.
+
+---
+
+## Fase 2 — Modelado de la base de datos con Prisma
+
+**Fecha:** 2026-07-12
+
+### Alcance de esta fase
+
+Únicamente la capa de persistencia: `schema.prisma`, migración inicial y
+Prisma Client. **No** se implementaron controllers, services, repositories,
+CRUD, autenticación ni lógica de negocio.
+
+### Decisiones tomadas por el usuario (previas a la implementación)
+
+- La base de datos `delivery_system` existente pertenecía a una versión
+  antigua del sistema → **se eliminó por completo y se recreó desde cero**
+  con Prisma Migrate. No se conservó ningún dato.
+- El diagrama ER provisto es la referencia oficial del modelo.
+- `password_hash` (no `password`) es el nombre definitivo de la columna en
+  `usuarios`, tal como aparece en el diagrama.
+
+### Inconsistencias detectadas, presentadas al usuario y resueltas
+
+Antes de escribir el schema se hizo una revisión cruzada ER + documentación
+funcional (casos de uso). Se encontraron 4 puntos sin solución explícita en
+el diseño aprobado; se presentaron con alternativas y quedaron resueltos así:
+
+1. **`PEDIDOS` no tenía columna de fecha de creación**, pero CU18 exige
+   "filtros por fecha" en los reportes → se agregó `creadoEn DateTime
+   @default(now())` (`creado_en`), indexado.
+2. **CU10 exige registrar "observaciones" al confirmar la entrega**, pero
+   ninguna de las 9 tablas tenía un campo para eso → se agregó
+   `observaciones String?` a `PEDIDOS`.
+3. **`SUCURSALES` no tenía `deleted_at`** (a diferencia de `TIENDAS`,
+   `CLIENTES` y `USUARIOS`) → se agregó `deletedAt DateTime?` para poder
+   cerrar una sucursal puntual sin romper la integridad de pedidos
+   históricos.
+4. **Estrategia de `onDelete` no especificada** en el ER → se definió
+   `Restrict` en todas las relaciones obligatorias (el borrado real de
+   usuarios/tiendas/sucursales/clientes/motorizados se hace solo vía soft
+   delete) y `SetNull` únicamente en las 3 relaciones ya opcionales:
+   `pedidos.motorizado_actual_id`, `historial_pedido.motorizado_id`,
+   `incidentes.pedido_id`.
+
+Notas menores aplicadas sin bloquear (ambigüedades de bajo riesgo, avisadas
+en el chat):
+
+- `PERFILES_MOTORIZADOS.estado`: el documento dice "Disponible, ocupado,
+  inactivo, **etc.**" → se cerró como enum de 3 valores
+  (`disponible`/`ocupado`/`inactivo`).
+- `INCIDENTES.tipo`: el documento dice "Accidente, avería, daño al
+  producto, **etc.**" → se cerró como enum de 4 valores
+  (`accidente`/`averia`/`dano_producto`/`otro`, este último como válvula de
+  escape para el "etc.").
+- `descripcion_producto` en `PEDIDOS` no estaba en la lista explícita de
+  campos opcionales de la sección 5 del documento, pero tampoco en la de
+  obligatorios → se interpretó como opcional (coherente con "el resto queda
+  disponible pero opcional").
+- `usuario` (nombre de usuario de login) se marcó `@unique`, aunque el
+  diagrama no lo indica explícitamente — es indispensable para poder
+  autenticar en la Fase 3.
+
+### Modelo implementado
+
+9 tablas, generador `prisma-client-js` (heredado de la Fase 1), sin `output`
+personalizado:
+
+| Tabla | PK | FKs | Notas |
+|---|---|---|---|
+| `usuarios` | id | — | `usuario` y `correo` únicos; `password_hash`; enum `rol` |
+| `tiendas` | id | — | soft delete |
+| `sucursales` | id | `tienda_id` → tiendas (Restrict) | soft delete (agregado) |
+| `clientes` | id | — | soft delete |
+| `perfiles_motorizados` | id | `usuario_id` → usuarios (Restrict, único = 1-1) | enum `estado` |
+| `pedidos` | id | `sucursal_id`, `cliente_id` → Restrict; `motorizado_actual_id` → SetNull; `creado_por_id` → Restrict | `codigo_pedido` único; enum `estado`; `creado_en` y `observaciones` agregados |
+| `historial_pedido` | id | `pedido_id`, `usuario_id` → Restrict; `motorizado_id` → SetNull | `tipo_evento` discrimina uso de `estado` vs `motorizado_id` |
+| `fotos_entrega` | id | `pedido_id`, `motorizado_id` → Restrict | enum `tipo` (recojo/entrega) |
+| `incidentes` | id | `motorizado_id` → Restrict; `pedido_id` → SetNull (opcional, "si aplica") | enum `tipo` |
+
+Enums: `RolUsuario`, `EstadoMotorizado`, `EstadoPedido` (10 valores: flujo
+principal + 5 alternativos), `TipoEventoHistorial`, `TipoFoto`,
+`TipoIncidente`.
+
+Índices agregados (más allá de PK/único y los de FK que Prisma crea
+automáticamente en MySQL), justificados por los reportes de la
+documentación (CU16, CU17, CU18, CU20):
+
+- `pedidos(estado)`, `pedidos(creado_en)` — CU18 Reporte de Pedidos.
+- `historial_pedido(pedido_id, created_at)` — CU16 Consultar Historial.
+- `fotos_entrega(pedido_id, tipo)` — CU17 Consultar Fotografías.
+- `incidentes(motorizado_id, resuelto)` — CU20 Reporte de Motorizados.
+- `perfiles_motorizados(estado)` — para ubicar motorizados disponibles al
+  asignar (CU05).
+
+### Migración
+
+- `prisma/migrations/20260713023718_init/migration.sql` — migración única,
+  crea las 9 tablas, 13 FKs y todos los índices descritos arriba.
+- Base de datos `delivery_system` eliminada y recreada vacía
+  (`utf8mb4`/`utf8mb4_unicode_ci`) antes de aplicar la migración.
+
+### Verificaciones ejecutadas — todas OK
+
+- `prisma validate` ✓
+- `prisma generate` ✓ (Prisma Client en `node_modules/@prisma/client`)
+- `prisma migrate dev --name init` ✓ (migración creada y aplicada)
+- `tsc --noEmit` ✓ · `npm run build` ✓ · `npm run lint` ✓
+- Verificación estructural contra `information_schema` de MySQL: 9 tablas de
+  negocio + `_prisma_migrations`, 13 FKs (10 `RESTRICT` + 3 `SET NULL`,
+  coincide exactamente con lo aprobado), todos los índices esperados
+  presentes.
+- Smoke test funcional end-to-end vía Prisma Client (crear usuario admin +
+  usuario motorizado con perfil 1-1, tienda con sucursal, cliente, pedido
+  con todas sus relaciones, evento de historial de `cambio_estado` y de
+  `reasignacion`, foto de entrega, incidente): lectura anidada completa
+  correcta, `Restrict` verificado (no se pudo borrar un cliente con pedidos
+  asociados), `SetNull` verificado (se pudo borrar un perfil de motorizado
+  tras desvincularlo), limpieza total sin dejar residuos.
+
+### Estado actual del desarrollo
+
+Capa de persistencia completa y verificada. Sin controllers, services,
+repositories, CRUD, autenticación ni endpoints (fuera de alcance de esta
+fase, según lo solicitado).
+
+### Tareas pendientes (arrastradas a Fase 4+)
+
+- Diseñar los módulos de negocio restantes dentro de `src/modules/`
+  (tiendas, sucursales, clientes, pedidos, historial, fotos, incidentes,
+  reportes).
+- Crear un usuario de MySQL de mínimo privilegio para reemplazar `root` en
+  `DATABASE_URL` antes de cualquier entorno compartido.
+- Definir la lógica de generación de `codigo_pedido` (autogenerado, único).
+- Agregar JWT, guards y autorización por rol (explícitamente diferido, ver
+  Fase 3 más abajo).
+
+---
+
+## Fase 3 — Usuarios y autenticación básica
+
+**Fecha:** 2026-07-12
+
+### Alcance de esta fase
+
+Módulo completo de **Usuarios** (CRUD, soft delete, activar/desactivar,
+paginación, búsqueda) y **Auth** básico (registro público + login), sin
+JWT/guards/sesiones (diferidos a una fase posterior). No se tocó ningún otro
+módulo de negocio.
+
+### Punto de arquitectura presentado y resuelto
+
+**Problema:** los DTOs pedidos para esta fase son `CreateUserDto`,
+`UpdateUserDto`, `LoginDto`, `UserResponseDto` — ninguno adicional para
+"registro". Reutilizar `CreateUserDto` tal cual en `POST /auth/register`
+habría permitido que **cualquiera se autorregistrara como
+`administrador`**, ya que en esta fase todavía no existen guards/JWT que
+protejan nada.
+
+**Decisión aprobada:** `POST /auth/register` fuerza `rol = 'motorizado'`
+(coincide con CU15 "se autoregistran"); crear una cuenta `administrador`
+solo es posible vía el CRUD de Usuarios. Se implementó con un
+`RegisterDto = OmitType(CreateUsuarioDto, ['rol'])`: si alguien envía `rol`
+en el body de `/auth/register`, el `ValidationPipe` global
+(`forbidNonWhitelisted`) lo rechaza con 400 antes de llegar al servicio —
+verificado en pruebas.
+
+### Estructura del módulo
+
+```
+src/modules/usuarios/
+  dto/
+    create-usuario.dto.ts
+    update-usuario.dto.ts       (PartialType de CreateUsuarioDto)
+    usuario-response.dto.ts     (nunca incluye passwordHash; id como string)
+    list-usuarios-query.dto.ts  (extiende PaginationQueryDto + filtros)
+  interfaces/
+    usuarios-repository.interface.ts  (puerto IUsuariosRepository + token DI)
+  usuarios.repository.ts        (unica pieza que toca Prisma)
+  usuarios.mapper.ts             (Usuario de Prisma -> UsuarioResponseDto)
+  usuarios.service.ts            (reglas de negocio, hashing, duplicados)
+  usuarios.controller.ts
+  usuarios.module.ts
+
+src/modules/auth/
+  dto/
+    login.dto.ts                (identificador: usuario o correo + password)
+    register.dto.ts             (CreateUsuarioDto sin 'rol')
+    auth-response.dto.ts        (envuelve UsuarioResponseDto; { usuario })
+  auth.service.ts
+  auth.controller.ts
+  auth.module.ts                (importa UsuariosModule, reutiliza su service)
+
+src/common/dto/
+  pagination-query.dto.ts       (page/limit, reutilizable por otros modulos)
+  paginated-response.dto.ts     (wrapper generico { data, total, page, limit })
+```
+
+Separación aplicada: Controller (HTTP + Swagger) → Service (reglas de
+negocio, hashing, validaciones de duplicado) → Repository (Prisma, detrás de
+una interfaz `IUsuariosRepository` inyectada por token — Dependency
+Inversion) → Mapper (entidad Prisma → DTO de respuesta, nunca al revés). Sin
+lógica de negocio en los controllers.
+
+### Endpoints implementados
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/v1/usuarios` | Crear usuario (admin o motorizado) |
+| GET | `/api/v1/usuarios` | Listar con paginación + filtro por `usuario`/`correo` |
+| GET | `/api/v1/usuarios/:id` | Buscar por id |
+| PATCH | `/api/v1/usuarios/:id` | Actualizar (password solo si se envía) |
+| PATCH | `/api/v1/usuarios/:id/activar` | Activar cuenta |
+| PATCH | `/api/v1/usuarios/:id/desactivar` | Desactivar cuenta |
+| DELETE | `/api/v1/usuarios/:id` | Eliminación lógica (`deletedAt`) |
+| POST | `/api/v1/auth/register` | Autorregistro público (siempre `rol=motorizado`) |
+| POST | `/api/v1/auth/login` | Login con `usuario` o `correo` + password |
+
+Todos documentados en Swagger (`/api/docs`), agrupados en los tags
+`Usuarios` y `Auth`.
+
+### Decisiones técnicas
+
+- **Argon2** para hash de contraseñas (`argon2.hash`/`argon2.verify` con
+  los parámetros por defecto del paquete, ya seguros de fábrica). Nunca se
+  persiste ni se devuelve `password_hash`.
+- **Activar/desactivar y eliminar lógico como endpoints propios**, no como
+  campos editables en `UpdateUsuarioDto` — evita que un cliente pueda
+  escribir `activo`/`deletedAt` directamente vía `PATCH` genérico.
+- **Login con mensaje 401 genérico** ("Credenciales invalidas") para los 4
+  casos de fallo (usuario inexistente, inactivo, eliminado lógicamente,
+  password incorrecta) — evita enumeración de usuarios. Interna y
+  funcionalmente cada caso se verifica y prueba por separado, tal como pide
+  esta fase; solo el mensaje externo es uniforme.
+- **`id` serializado como `string`** en `UsuarioResponseDto`: los ids de
+  Prisma son `BigInt`, que `JSON.stringify` no puede serializar de forma
+  nativa; convertir a `string` en el mapper evita el error y no pierde
+  precisión (mejor que convertir a `number`).
+- **Verificación de duplicados en dos niveles**: primero una consulta
+  explícita (`buscarPorUsuario`/`buscarPorCorreo`) para devolver un 409 claro
+  antes de tocar la base, y además un `catch` del código `P2002` de Prisma
+  como red de seguridad ante condiciones de carrera (dos requests
+  simultáneos).
+- **Los usuarios eliminados lógicamente cuentan como "usuario ya en uso"**
+  para `usuario`/`correo`: el `@unique` de la Fase 2 es un índice único
+  simple en MySQL (no parcial excluyendo `deleted_at`), así que un
+  `usuario`/`correo` de una cuenta eliminada queda bloqueado permanentemente
+  a nivel de base de datos. Es una consecuencia directa del esquema ya
+  aprobado en Fase 2, no una decisión nueva; si se necesita reutilizar esos
+  identificadores tras un borrado lógico, requeriría revisar el esquema
+  (índice único parcial, que MySQL no soporta de forma nativa sin columnas
+  generadas) — dejar anotado para una futura fase si el negocio lo pide.
+- **Paginación y DTO de respuesta paginada** movidos a `common/dto/` para
+  que los demás módulos (tiendas, pedidos, etc.) los reutilicen sin
+  duplicar código.
+- `ParseIntPipe` en los parámetros de ruta (`:id`) + conversión a `BigInt`
+  antes de llegar al service/repository, que trabajan siempre con `bigint`
+  (mismo tipo que Prisma).
+
+### Pruebas realizadas (manuales, contra MySQL real vía `node dist/src/main.js`)
+
+Todas verificadas con resultado correcto:
+
+- Crear usuario administrador → 201.
+- Crear con `usuario` duplicado → 409.
+- Crear con `correo` duplicado → 409.
+- Validaciones: correo inválido, password corta (<8), rol inválido → 400
+  cada uno, con mensaje claro de `class-validator`.
+- Buscar por id existente → 200; id inexistente → 404.
+- Listado con paginación y filtro parcial por `usuario` → 200.
+- Actualizar correo de un usuario → 200; `password_hash` nunca aparece en
+  ninguna respuesta (verificado explícitamente).
+- `POST /auth/register` → crea con `rol=motorizado` sin importar qué se
+  envíe; si el body incluye `rol`, el `ValidationPipe` lo rechaza con 400
+  (`property rol should not exist`) antes de llegar a la lógica de negocio.
+- Login correcto con `usuario` → 200; login correcto con `correo` → 200.
+- Login con password incorrecta → 401.
+- Login con usuario inexistente → 401.
+- Desactivar usuario → login → 401; reactivar → login → 200.
+- Eliminar lógicamente → `GET /usuarios/:id` pasa a 404 (tratado como
+  inexistente); login → 401; el usuario desaparece del listado.
+- `tsc --noEmit`, `npm run build`, `npm run lint` sin errores.
+- Suite de tests por defecto (unit + e2e) sigue pasando con los nuevos
+  módulos registrados en `AppModule`.
+
+Datos de prueba eliminados de la base de datos al finalizar (no queda
+ningún usuario de prueba en `delivery_system`).
+
+### Estado actual del desarrollo
+
+Módulo Usuarios y Auth completos y verificados end-to-end. Sin JWT, guards,
+refresh tokens, cookies, sesiones ni OAuth (explícitamente diferidos). Sin
+otros módulos de negocio (tiendas, pedidos, etc.).
+
+---
+
+## Fase 4 — Módulos de Tiendas y Sucursales
+
+**Fecha:** 2026-07-12
+
+### Alcance de esta fase
+
+CRUD completo de **Tiendas** y **Sucursales**, reutilizando exactamente la
+arquitectura de la Fase 3 (Controller → Service → Repository detrás de
+interfaz con token DI → Mapper). No se modificó Usuarios/Auth ni el
+`schema.prisma`. No se tocaron Clientes, Pedidos, Motorizados, Historial,
+Fotos ni Incidentes.
+
+### Conflicto detectado y resuelto (instrucción vs. esquema ya migrado)
+
+**Problema:** esta fase pide `telefono` opcional en Sucursales, pero en la
+Fase 2 (aprobada explícitamente) `sucursales.telefono` se migró como
+`VARCHAR(20) NOT NULL`, y esta misma fase prohíbe modificar el esquema. Son
+dos instrucciones contradictorias entre sí, no algo resoluble solo con
+criterio técnico.
+
+**Decisión aprobada:** mantener `telefono` obligatorio en
+`CreateSucursalDto`/`UpdateSucursalDto` (igual que la columna real). Queda
+pendiente para una fase futura, si se autoriza tocar el esquema, migrar la
+columna a `String?` para que sea real y verdaderamente opcional.
+
+### Ambigüedad funcional detectada y resuelta
+
+**Situación:** `Tienda.nombre` y `Tienda.ruc` no tienen restricción
+`UNIQUE` en la base de datos (no autorizado a agregarla esta fase), así que
+"no permitir duplicados" solo puede aplicarse a nivel de aplicación. No
+estaba definido si una tienda eliminada lógicamente debía seguir
+bloqueando su nombre/ruc para tiendas nuevas o liberarlos.
+
+**Decisión aprobada:** una tienda eliminada lógicamente **sigue bloqueando**
+su `nombre`/`ruc` (comportamiento más conservador). Verificado con prueba
+manual: intentar crear una tienda con el nombre de una tienda ya eliminada
+devuelve 409.
+
+### Observación de arquitectura (informativa, sin acción esta fase)
+
+`Tienda.nombre` y `Tienda.ruc` carecen de índice `UNIQUE` en la base de
+datos real (el ER original solo marcaba `correo` de `USUARIOS` como único;
+la regla de "sin duplicados" para Tiendas es nueva de esta fase). La
+validación de duplicados se hace hoy únicamente a nivel de aplicación
+(consulta previa + `catch` de `P2002` como red de seguridad, igual que en
+Usuarios), lo que deja una ventana teórica de condición de carrera ante dos
+requests simultáneos, ya que no hay una restricción real de base de datos
+que lo impida. Recomendación para una fase futura que autorice tocar el
+esquema: agregar `@@unique` a `nombre` y a `ruc` en `Tienda`. No se actúa
+sobre esto ahora, solo se deja documentado.
+
+### Estructura de los módulos
+
+```
+src/modules/tiendas/
+  dto/
+    create-tienda.dto.ts        (nombre obligatorio, ruc opcional)
+    update-tienda.dto.ts        (PartialType de CreateTiendaDto)
+    tienda-response.dto.ts
+    list-tiendas-query.dto.ts   (extiende PaginationQueryDto + nombre)
+  interfaces/tiendas-repository.interface.ts  (puerto + token DI)
+  tiendas.repository.ts
+  tiendas.mapper.ts
+  tiendas.service.ts
+  tiendas.controller.ts
+  tiendas.module.ts
+
+src/modules/sucursales/
+  dto/
+    create-sucursal.dto.ts   (tiendaId, nombre, direccion, telefono obligatorios;
+                               referencia, esPrincipal opcionales)
+    update-sucursal.dto.ts   (PartialType de CreateSucursalDto)
+    sucursal-response.dto.ts
+    list-sucursales-query.dto.ts  (extiende PaginationQueryDto + tiendaId, nombre)
+  interfaces/sucursales-repository.interface.ts
+  sucursales.repository.ts
+  sucursales.mapper.ts
+  sucursales.service.ts   (inyecta TiendasService para validar la tienda padre)
+  sucursales.controller.ts
+  sucursales.module.ts    (importa TiendasModule)
+```
+
+`SucursalesService` reutiliza `TiendasService.buscarPorId()` (ya lanza
+`NotFoundException` si la tienda no existe o está eliminada lógicamente)
+para validar la tienda padre al crear o al reasignar `tiendaId` en una
+actualización — evita duplicar la lógica de "tienda existe y no está
+eliminada" (DRY).
+
+### Endpoints implementados
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/v1/tiendas` | Crear tienda |
+| GET | `/api/v1/tiendas` | Listar con paginación + búsqueda por nombre |
+| GET | `/api/v1/tiendas/:id` | Buscar por id |
+| PATCH | `/api/v1/tiendas/:id` | Actualizar |
+| PATCH | `/api/v1/tiendas/:id/activar` | Activar |
+| PATCH | `/api/v1/tiendas/:id/desactivar` | Desactivar |
+| DELETE | `/api/v1/tiendas/:id` | Eliminación lógica |
+| POST | `/api/v1/sucursales` | Crear sucursal (valida tienda existente y activa) |
+| GET | `/api/v1/sucursales` | Listar con paginación + filtro `tiendaId` + búsqueda por nombre |
+| GET | `/api/v1/sucursales/:id` | Buscar por id |
+| PATCH | `/api/v1/sucursales/:id` | Actualizar |
+| DELETE | `/api/v1/sucursales/:id` | Eliminación lógica |
+
+Todos documentados en Swagger, agrupados en los tags `Tiendas` y
+`Sucursales`.
+
+Nota: Sucursales no tiene endpoints `activar`/`desactivar` porque el
+modelo (Fase 2) no le agregó un campo `activo` — solo `deletedAt`. No
+estaba pedido en esta fase tampoco, consistente con el esquema.
+
+### Decisiones técnicas
+
+- **"Consultar sucursales por tienda"** implementado como filtro
+  (`GET /sucursales?tiendaId=X`) sobre el mismo endpoint de listado, en vez
+  de una ruta anidada (`/tiendas/:id/sucursales`) — evita duplicar lógica de
+  paginación/listado (DRY), mismo patrón que los filtros de Usuarios.
+- **Activar/desactivar y eliminar lógico como endpoints propios** en
+  Tiendas, igual que en Usuarios — no como campos editables en
+  `UpdateTiendaDto`.
+- **`buscarPorNombre`/`buscarPorRuc` no filtran `deletedAt`** (a diferencia
+  de las demás consultas), por la decisión aprobada de que una tienda
+  eliminada sigue bloqueando su nombre/ruc.
+- Mismo patrón de manejo de duplicados que Usuarios: pre-chequeo explícito
+  (409 con mensaje claro) + `catch` de `P2002` como red de seguridad.
+- `esPrincipal` incluido como campo opcional (`default: false`) en los DTOs
+  de Sucursal para completar el CRUD según el modelo de Fase 2, aunque no
+  estaba en la lista explícita de validaciones de esta fase.
+
+### Pruebas realizadas (manuales, contra MySQL real vía `node dist/src/main.js`)
+
+**Tiendas:** crear (201); duplicidad de nombre (409); duplicidad de RUC
+(409); crear sin RUC (201, opcional); nombre vacío (400); buscar por id
+(200) e inexistente (404); listado paginado; búsqueda por nombre parcial;
+actualizar (200); desactivar → reactivar (200); eliminar lógicamente (200);
+buscar/actualizar/activar una tienda eliminada → 404 en los tres casos;
+crear una tienda nueva con el nombre de una ya eliminada → 409 (confirma la
+decisión aprobada).
+
+**Sucursales:** crear para tienda existente (201); crear para tienda
+inexistente (404); crear para tienda eliminada lógicamente (404); nombre
+vacío (400); dirección faltante (400); teléfono faltante (400, por la
+decisión de mantenerlo obligatorio); buscar por id (200) e inexistente
+(404); listado paginado; consultar sucursales por tienda vía
+`?tiendaId=` (200, filtra correctamente); actualizar (200); actualizar
+asignando una tienda inexistente (404); eliminar lógicamente (200); la
+sucursal eliminada desaparece del listado por tienda.
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · suite de tests por defecto
+(unit + e2e) sigue pasando con los nuevos módulos registrados en
+`AppModule`. Datos de prueba eliminados de la base de datos al finalizar.
+
+### Estado actual del desarrollo
+
+Módulos Usuarios, Auth, Tiendas y Sucursales completos y verificados
+end-to-end. Sin Clientes, Pedidos, Motorizados, Historial, Fotos ni
+Incidentes (fuera de alcance de esta fase). Sin JWT/guards (diferido).
+
+### Observaciones para las siguientes fases
+
+- Migración pendiente (requiere autorización de tocar el esquema):
+  `sucursales.telefono` a `String?`.
+- Mejora de arquitectura sugerida (requiere autorización): `@@unique` en
+  `Tienda.nombre` y `Tienda.ruc`.
+- El módulo de Pedidos (próxima fase natural) dependerá de
+  `SucursalesService`/`ClientesService` de la misma forma en que
+  Sucursales depende hoy de `TiendasService`.
+
+---
+
+## Fase 5 — Módulo de Clientes
+
+**Fecha:** 2026-07-12
+
+### Alcance de esta fase
+
+CRUD completo de **Clientes**, mismo patrón arquitectónico de las fases
+anteriores. No se tocaron Usuarios, Auth, Tiendas ni Sucursales. No se
+modificó el `schema.prisma`. No se implementaron Pedidos, Motorizados,
+Historial, Fotos ni Incidentes.
+
+### Decisión explícita de esta fase: sin reglas de duplicidad
+
+A diferencia de Usuarios (correo/usuario únicos) y Tiendas (nombre/RUC sin
+duplicados, decidido en Fase 4), esta fase indicó expresamente **no
+inventar** ninguna regla de duplicidad para Clientes, ya que la
+documentación funcional no la define. Se implementó en consecuencia:
+
+- No hay `validarXDisponible` ni chequeo de duplicados en
+  `ClientesService`.
+- No hay `catch` de `P2002` (no hay ninguna restricción única en el modelo
+  de `Cliente` más allá de `id`, así que no hay nada que ese código pudiera
+  capturar).
+- Verificado con prueba manual: se creó un segundo cliente con el mismo
+  `nombreCompleto` y el mismo `telefono` que uno ya existente, y la API lo
+  permitió sin error (201), confirmando que no se coló ninguna validación
+  no solicitada.
+
+Como consecuencia directa, este módulo no genera nunca un `409 Conflict`
+de forma natural (no existe ninguna condición de conflicto definida en el
+alcance de esta fase); los códigos usados son `400` (validación) y `404`
+(no encontrado).
+
+### Estructura del módulo
+
+```
+src/modules/clientes/
+  dto/
+    create-cliente.dto.ts   (nombreCompleto, telefono, direccion obligatorios;
+                              documentoIdentidad opcional)
+    update-cliente.dto.ts   (PartialType de CreateClienteDto)
+    cliente-response.dto.ts
+    list-clientes-query.dto.ts  (extiende PaginationQueryDto + nombre, telefono,
+                                  documentoIdentidad)
+  interfaces/clientes-repository.interface.ts  (puerto + token DI)
+  clientes.repository.ts
+  clientes.mapper.ts
+  clientes.service.ts
+  clientes.controller.ts
+  clientes.module.ts
+```
+
+Mismo patrón Controller → Service → Repository (detrás de interfaz con
+token) → Mapper que en Usuarios/Tiendas/Sucursales. Sin lógica de negocio
+en el controller. Sin campo `activo` ni endpoints activar/desactivar,
+porque el modelo de `Cliente` (Fase 2) no tiene ese campo — solo
+`deletedAt`, tal como esta fase indicó explícitamente.
+
+### Endpoints implementados
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/v1/clientes` | Crear cliente |
+| GET | `/api/v1/clientes` | Listar con paginación + búsqueda por nombre/telefono/documento |
+| GET | `/api/v1/clientes/:id` | Buscar por id |
+| PATCH | `/api/v1/clientes/:id` | Actualizar |
+| DELETE | `/api/v1/clientes/:id` | Eliminación lógica (`deletedAt`) |
+
+Documentado en Swagger, tag `Clientes`.
+
+### Decisiones técnicas
+
+- Filtros de búsqueda (`nombre`, `telefono`, `documentoIdentidad`) todos
+  con coincidencia parcial (`contains`), igual que los filtros ya
+  existentes en Usuarios/Tiendas/Sucursales, y combinables entre sí y con
+  paginación.
+- `buscarPorId` filtra `deletedAt: null`, por lo que un cliente eliminado
+  lógicamente se comporta como "no encontrado" (404) tanto para consulta
+  como para actualización y para un segundo intento de eliminación — mismo
+  patrón que Usuarios/Tiendas/Sucursales, sin necesidad de lógica nueva.
+
+### Pruebas realizadas (manuales, contra MySQL real vía `node dist/src/main.js`)
+
+Crear cliente completo (201); crear sin documento de identidad (201,
+opcional); nombre/dirección/teléfono faltantes → 400 cada uno; crear un
+segundo cliente con nombre y teléfono duplicados de uno existente → 201
+(confirma que no se inventó ninguna regla de duplicidad); buscar por id
+(200) e inexistente (404); listado paginado; búsqueda por nombre parcial,
+por teléfono parcial y por documento de identidad (200 cada una);
+actualizar (200); eliminar lógicamente (200); consultar cliente eliminado
+→ 404; actualizar cliente eliminado → 404; eliminar un id inexistente →
+404; el cliente eliminado desaparece del listado/búsqueda.
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · suite de tests por defecto
+(unit + e2e) sigue pasando. Datos de prueba eliminados de la base de datos
+al finalizar.
+
+### Estado actual del desarrollo
+
+Módulos Usuarios, Auth, Tiendas, Sucursales y Clientes completos y
+verificados end-to-end. Sin Pedidos, Motorizados, Historial, Fotos ni
+Incidentes (fuera de alcance). Sin JWT/guards (diferido).
+
+### Observaciones para las siguientes fases
+
+- Igual que con Tiendas, si en el futuro se define una regla de negocio
+  de duplicidad para Clientes (p. ej. por `documentoIdentidad`), sería una
+  ambigüedad funcional a resolver con aprobación explícita antes de
+  implementarla — no hay nada que indique esa necesidad hoy.
+- El módulo de Pedidos (próxima fase natural) dependerá de
+  `ClientesService`/`SucursalesService` para validar `cliente_id` y
+  `sucursal_id`, con el mismo patrón de reutilización ya usado entre
+  Sucursales y Tiendas.
+
+---
+
+## Fase 6 — Módulo de Perfiles de Motorizados
+
+**Fecha:** 2026-07-12
+
+### Alcance de esta fase
+
+CRUD completo de **Perfiles de Motorizados**, relacionado 1-a-1 con
+Usuarios. No se modificó Usuarios ni Auth. No se tocó el `schema.prisma`.
+No se implementaron Pedidos, Historial, Fotos ni Incidentes.
+
+### Observación de arquitectura: duplicidad de placa (documentada, sin implementar)
+
+**Situación:** la documentación funcional no especifica si `placa` debe
+ser única entre perfiles de motorizados. Esta fase indicó explícitamente no
+agregar esa restricción por criterio técnico, y clasificarla como
+Observación de Arquitectura si se considera recomendable.
+
+**Observación:** en la práctica dos motorizados no deberían compartir la
+misma placa de vehículo (llevaría a ambigüedad al identificar qué
+motorizado condujo un vehículo determinado en un reporte o incidente). Sin
+embargo, esto no está confirmado por ningún caso de uso ni por la sección
+4.1 del documento, así que **no se implementó ninguna validación de
+unicidad sobre `placa`** — se puede crear más de un perfil con la misma
+placa. Verificado con prueba manual.
+
+**Recomendación (pendiente de tu aprobación):** si se confirma que la
+placa debe ser única, agregar `@@unique` a `PerfilMotorizado.placa` en el
+esquema (requeriría una migración) y el mismo patrón de pre-chequeo +
+`catch P2002` ya usado en Usuarios/Tiendas. No se actúa sobre esto ahora.
+
+### Decisión de diseño: `usuarioId` inmutable tras la creación
+
+La documentación no define si un perfil puede reasignarse a otro usuario.
+No se trata de una ambigüedad de negocio que deba consultarse, sino de una
+funcionalidad no solicitada que se optó por **no construir**: `usuarioId`
+no aparece en `UpdatePerfilMotorizadoDto`
+(`OmitType(CreatePerfilMotorizadoDto, ['usuarioId'])`). Solo `placa` y
+`estado` son editables. Verificado con prueba manual: enviar `usuarioId`
+en un `PATCH` es rechazado con 400 (`property usuarioId should not
+exist`) por el `ValidationPipe` global, antes de llegar a la lógica de
+negocio.
+
+### Transacciones de Prisma: no se usaron (justificación)
+
+Se revisó cada operación del módulo para decidir si requería
+`prisma.$transaction`:
+
+- **Crear**: solo *lee* `Usuario` (vía `UsuariosService.buscarPorId`) para
+  validar existencia/estado/rol; el único `write` es sobre
+  `PerfilMotorizado`. No modifica dos entidades.
+- **Actualizar**: solo escribe sobre `PerfilMotorizado` (`placa`/`estado`).
+  No toca `Usuario` en absoluto, porque `usuarioId` no es editable (ver
+  punto anterior).
+- **Eliminar**: solo borra el registro de `PerfilMotorizado`. No toca
+  `Usuario`.
+
+Como ninguna operación de este módulo escribe en `usuarios` y
+`perfiles_motorizados` a la vez, **no se usó ninguna transacción** — habría
+sido una transacción innecesaria (explícitamente desaconsejado). Si en una
+fase futura se agrega alguna operación que sí escriba en ambas tablas (por
+ejemplo, un endpoint que cree el usuario y su perfil en un solo paso), esa
+sería el primer caso real que justificaría `$transaction` en este módulo.
+
+### Estructura del módulo
+
+```
+src/modules/perfiles-motorizados/
+  dto/
+    create-perfil-motorizado.dto.ts  (usuarioId, placa, estado obligatorios)
+    update-perfil-motorizado.dto.ts  (PartialType de Create sin usuarioId)
+    perfil-motorizado-response.dto.ts
+    list-perfiles-motorizados-query.dto.ts  (+ usuarioId, estado, placa)
+  interfaces/perfiles-motorizados-repository.interface.ts  (puerto + token DI)
+  perfiles-motorizados.repository.ts
+  perfiles-motorizados.mapper.ts
+  perfiles-motorizados.service.ts   (inyecta UsuariosService)
+  perfiles-motorizados.controller.ts
+  perfiles-motorizados.module.ts    (importa UsuariosModule)
+```
+
+Mismo patrón Controller → Service → Repository (interfaz + token) →
+Mapper. `PerfilesMotorizadosService` reutiliza
+`UsuariosService.buscarPorId()` (ya valida existencia y no-eliminado, y
+expone `activo`/`rol` en el DTO de respuesta) para las 4 validaciones de
+negocio exigidas — sin duplicar lógica ni tocar la entidad Prisma cruda de
+`Usuario` (nunca se toca `password_hash`).
+
+### Endpoints implementados
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/v1/perfiles-motorizados` | Crear perfil (valida usuario existente, activo, no eliminado, rol motorizado, sin perfil previo) |
+| GET | `/api/v1/perfiles-motorizados` | Listar con paginación + filtros por `usuarioId`, `estado`, `placa` |
+| GET | `/api/v1/perfiles-motorizados/:id` | Buscar por id |
+| PATCH | `/api/v1/perfiles-motorizados/:id` | Actualizar `placa`/`estado` |
+| DELETE | `/api/v1/perfiles-motorizados/:id` | Eliminación **física** (el modelo no tiene `deletedAt`) |
+
+Documentado en Swagger, tag `Perfiles de Motorizados`.
+
+### Decisiones técnicas
+
+- **Eliminación física**, no lógica: `PerfilMotorizado` no tiene columna
+  `deletedAt` en el esquema de la Fase 2 — se usó `prisma.perfilMotorizado.delete()`
+  tal cual el modelo lo define, sin modificar el esquema.
+- **"No administrador" y "rol motorizado" se resuelven con una sola
+  verificación** (`usuario.rol !== RolUsuario.motorizado`), ya que el enum
+  `RolUsuario` solo tiene 2 valores posibles — cubre ambos requisitos
+  explícitos sin duplicar lógica.
+- **Manejo de errores**: `404` (usuario o perfil no encontrado/eliminado),
+  `409` (usuario inactivo, usuario no motorizado, perfil duplicado para el
+  mismo usuario, o intento de borrar un perfil con registros asociados vía
+  `catch` de `P2003` — este último anticipa las Fases de Pedidos/Fotos/
+  Incidentes, cuando existan FKs reales apuntando a `perfiles_motorizados`),
+  `400` (validaciones de DTO).
+- Pre-chequeo de "ya existe un perfil para este usuario"
+  (`buscarPorUsuarioId`) + `catch` de `P2002` como red de seguridad, mismo
+  patrón que Usuarios/Tiendas — aunque aquí el `@unique` sí existe en el
+  esquema (`usuarioId`), a diferencia de Tiendas.
+
+### Pruebas realizadas (manuales, contra MySQL real vía `node dist/src/main.js`)
+
+Crear perfil correcto (201); usuario inexistente (404); usuario eliminado
+lógicamente (404); usuario inactivo (409); usuario administrador (409);
+segundo perfil para el mismo usuario (409); placa vacía (400); estado
+inválido (400); buscar por id (200) e inexistente (404); buscar por
+estado, por usuario y por placa parcial (200 cada uno); paginación;
+actualizar placa/estado (200); intentar modificar `usuarioId` vía PATCH →
+400 (rechazado por el `ValidationPipe`, confirma la inmutabilidad);
+actualizar perfil inexistente (404); eliminar perfil (200, verificado que
+es un `DELETE` físico consultando la tabla directamente — la fila
+desaparece por completo, no queda con `deletedAt`); eliminar perfil
+inexistente (404).
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · suite de tests por defecto
+(unit + e2e) sigue pasando. Datos de prueba (usuarios y perfiles)
+eliminados de la base de datos al finalizar.
+
+### Estado actual del desarrollo
+
+Módulos Usuarios, Auth, Tiendas, Sucursales, Clientes y Perfiles de
+Motorizados completos y verificados end-to-end. Sin Pedidos, Historial,
+Fotos ni Incidentes (fuera de alcance). Sin JWT/guards (diferido).
+
+### Observaciones para las siguientes fases
+
+- **Pendiente de aprobación**: `@@unique` en `PerfilMotorizado.placa`, si
+  se confirma que dos motorizados no deben compartir placa (ver
+  observación de arquitectura arriba).
+- El módulo de Pedidos (próxima fase natural) dependerá de
+  `PerfilesMotorizadosService` para validar `motorizado_actual_id` al
+  asignar/reasignar un motorizado a un pedido, con el mismo patrón de
+  reutilización ya usado en Sucursales→Tiendas y
+  PerfilesMotorizados→Usuarios.
+- El caso de `$transaction` mencionado en el objetivo de esta fase
+  ("siempre que una operación requiera modificar información de ambas
+  entidades") no tuvo ningún escenario real dentro del alcance de
+  Perfiles de Motorizados; es más probable que aparezca en la Fase de
+  Pedidos (p. ej., al reasignar un motorizado y registrar el evento en
+  `historial_pedido` en la misma operación).
+
+---
+
+## Fase 7 — Módulo de Pedidos
+
+**Fecha:** 2026-07-12
+
+### Alcance de esta fase
+
+CRUD completo de **Pedidos** (registro, sin asignación de motorizado, sin
+cambios de estado, sin historial). No se modificó ningún módulo anterior ni
+el `schema.prisma`. No se implementó Historial de Pedidos, Fotos de
+Entrega ni Incidentes.
+
+### Ambigüedad funcional resuelta: generación de `codigoPedido`
+
+**Situación:** la documentación funcional solo dice "Código autogenerado,
+único" (sección 4.1), sin especificar formato ni algoritmo. Se me indicó
+explícitamente no usar UUID, timestamp ni inventar un prefijo.
+
+**Decisión aprobada:** `codigoPedido = id.toString()` — se reutiliza el
+`id` autoincremental (ya único y autogenerado por MySQL/Prisma) sin
+inventar ningún formato adicional.
+
+**Detalle técnico derivado (documentado, no bloqueante):** el `id` no se
+conoce antes del `INSERT`, así que asignar `codigoPedido = id` requiere dos
+sentencias: crear el pedido y luego actualizar ese mismo campo. Ambas
+sentencias afectan la **misma fila** de la **misma tabla** (`pedidos`), no
+dos entidades distintas — pero dejar el `INSERT` sin el `UPDATE` posterior
+(por ejemplo, si el proceso fallara entre medio) dejaría una fila con un
+código placeholder inválido, una inconsistencia real dentro de la propia
+tabla. Por eso ambas sentencias se envolvieron en un único
+`prisma.$transaction()`: es atómico (todo o nada) y ningún lector externo
+puede observar el valor transitorio, gracias al aislamiento estándar de
+transacciones de MySQL/InnoDB. El valor transitorio usado internamente
+(`tmp_` + 20 caracteres hexadecimales aleatorios) nunca se expone en
+ninguna respuesta ni queda persistido — se sobrescribe con
+`id.toString()` antes de que la transacción confirme (`commit`). Esto es
+una necesidad técnica para satisfacer la columna `codigo_pedido`
+(`NOT NULL UNIQUE`) durante el instante entre el `INSERT` y el `UPDATE`,
+no una decisión de formato de negocio: el valor final que ve cualquier
+cliente de la API siempre es `codigoPedido = id`, tal como se aprobó.
+
+### Decisiones de diseño (documentadas, sin bloquear)
+
+- **`motorizadoActualId` no aparece en `CreatePedidoDto`**: el pedido se
+  crea siempre sin motorizado asignado, tal como exige esta fase. La
+  interfaz `CrearPedidoData` del repositorio ni siquiera contempla este
+  campo, reforzando la regla a nivel de tipos (no solo de validación).
+- **`estado` no aparece en `CreatePedidoDto` ni en `UpdatePedidoDto`**: el
+  repositorio siempre usa el valor por defecto del esquema (`pendiente`,
+  ya definido en Prisma) al crear, y no se implementó ningún mecanismo
+  para cambiarlo — los cambios de estado quedan explícitamente para la
+  fase de Historial de Pedidos.
+- **`sucursalId`, `clienteId` y `creadoPorId` no son editables** en
+  `UpdatePedidoDto` (excluidos vía `OmitType`) — mismo criterio conservador
+  aplicado a `usuarioId` en Perfiles de Motorizados (Fase 6): no se
+  construyó una capacidad de "reasignar" el pedido a otro cliente/sucursal
+  que no fue solicitada ni está respaldada por ningún caso de uso.
+- **Validación del `creadoPorId` limitada exactamente a lo pedido**: esta
+  fase solo exige verificar que el usuario creador "existe" y "no está
+  eliminado" — a diferencia de Perfiles de Motorizados (Fase 6), que sí
+  exigía además `activo` y `rol`. Aunque CU01 asocia el registro de
+  pedidos al rol Administrador, **no se agregó ningún chequeo de `activo`
+  ni de `rol` sobre `creadoPorId`**, seleccionar precisamente porque esta
+  fase no lo pidió explícitamente y la regla del proyecto es "no inventes
+  validaciones adicionales". Se deja como observación por si se desea
+  igualar el criterio a Perfiles de Motorizados en una fase futura.
+- **Eliminación física** (no lógica): `Pedido` no tiene columna
+  `deletedAt` en el esquema de la Fase 2 (ni en el ER original) — se
+  implementó `prisma.pedido.delete()` tal cual el modelo lo define, sin
+  tocar el esquema. Nota: la documentación no describe ningún caso de uso
+  de "eliminar pedido" (CU04 es "Cancelar Pedido", un cambio de estado,
+  explícitamente fuera de alcance de esta fase) — se implementó el
+  `DELETE` físico solo porque esta fase lo pidió explícitamente como parte
+  del CRUD ("Eliminar pedido respetando el comportamiento definido por el
+  modelo de datos"), no porque exista un CU que lo describa.
+
+### Historial de Pedidos: no se registró ningún evento (según lo pedido)
+
+No se escribió nada en `historial_pedido` desde este módulo — ni al crear,
+ni al actualizar, ni al eliminar. No hizo falta ninguna operación que
+dependiera del historial para mantener consistencia; no se encontró
+ningún caso que requiriera documentarse bajo esa regla.
+
+### Transacciones de Prisma
+
+Además del caso de `codigoPedido` (mismo entidad, ver arriba), se revisó
+si alguna operación de este módulo escribe en más de una tabla:
+
+- **Crear**: solo *lee* `Sucursal`/`Cliente`/`Usuario` para validar; el
+  único `write` es sobre `Pedido` (dentro de la transacción ya descrita).
+- **Actualizar**: solo escribe sobre `Pedido`. No toca ninguna otra tabla.
+- **Eliminar**: solo borra de `Pedido`. No toca ninguna otra tabla.
+
+Ninguna operación de este módulo escribe en dos *entidades* distintas a la
+vez, por lo que no se usó `$transaction` para ese propósito — solo para el
+caso de consistencia intra-fila ya explicado.
+
+### Estructura del módulo
+
+```
+src/modules/pedidos/
+  dto/
+    create-pedido.dto.ts   (sucursalId, clienteId, creadoPorId, direccionEntrega
+                             obligatorios; resto opcional; sin codigoPedido,
+                             estado ni motorizadoActualId)
+    update-pedido.dto.ts   (PartialType de Create sin sucursalId/clienteId/creadoPorId)
+    pedido-response.dto.ts
+    list-pedidos-query.dto.ts  (+ codigoPedido, clienteId, sucursalId, estado,
+                                 fechaDesde, fechaHasta)
+  interfaces/pedidos-repository.interface.ts  (puerto + token DI)
+  pedidos.repository.ts   (contiene la transaccion create+codigoPedido)
+  pedidos.mapper.ts        (BigInt/Decimal -> string, Date se serializa nativamente)
+  pedidos.service.ts        (inyecta SucursalesService, ClientesService, UsuariosService)
+  pedidos.controller.ts
+  pedidos.module.ts         (importa SucursalesModule, ClientesModule, UsuariosModule)
+```
+
+Mismo patrón Controller → Service → Repository (interfaz + token) →
+Mapper. `PedidosService` reutiliza `buscarPorId()` de los tres módulos
+relacionados (ya validan existencia + no-eliminado) sin duplicar lógica ni
+tocar las entidades Prisma crudas de esos módulos.
+
+### Endpoints implementados
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/v1/pedidos` | Registrar pedido (estado inicial `pendiente`, sin motorizado) |
+| GET | `/api/v1/pedidos` | Listar con paginación + filtros por código, cliente, sucursal, estado, rango de fechas |
+| GET | `/api/v1/pedidos/:id` | Buscar por id |
+| PATCH | `/api/v1/pedidos/:id` | Actualizar datos descriptivos del pedido |
+| DELETE | `/api/v1/pedidos/:id` | Eliminación **física** (el modelo no tiene `deletedAt`) |
+
+Documentado en Swagger, tag `Pedidos`.
+
+### Pruebas realizadas (manuales, contra MySQL real vía `node dist/src/main.js`)
+
+Crear pedido correcto (201, verificado `codigoPedido == id`, `estado ==
+pendiente`, `motorizadoActualId == null`, confirmado también directamente
+en la tabla vía SQL); cliente inexistente (404); cliente eliminado
+lógicamente (404); sucursal inexistente (404); sucursal eliminada
+lógicamente (404); usuario creador inexistente (404); usuario creador
+eliminado lógicamente (404); dirección obligatoria (400); crear con todos
+los campos opcionales (201, `valorProducto`/`costoEnvio` serializados
+como string); buscar por id (200) e inexistente (404); listado paginado;
+filtros por `codigoPedido`, `clienteId`, `sucursalId`, `estado` y rango de
+fechas (200 cada uno); actualizar campos descriptivos (200); intentar
+modificar `sucursalId` o `estado` vía `PATCH` → 400 (rechazado por el
+`ValidationPipe`, confirma la inmutabilidad); actualizar pedido inexistente
+(404); eliminar pedido (200, verificado como `DELETE` físico contra la
+tabla); eliminar pedido inexistente (404).
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · suite de tests por defecto
+(unit + e2e) sigue pasando. Datos de prueba eliminados de la base de datos
+al finalizar.
+
+### Estado actual del desarrollo
+
+Módulos Usuarios, Auth, Tiendas, Sucursales, Clientes, Perfiles de
+Motorizados y Pedidos completos y verificados end-to-end. Sin Historial de
+Pedidos, Fotos de Entrega ni Incidentes (fuera de alcance). Sin JWT/guards
+(diferido).
+
+### Observaciones para las siguientes fases
+
+- **Fase de Asignación de Motorizado**: deberá agregar la lógica para
+  poblar `motorizadoActualId` (hoy siempre `null` al crear) y,
+  presumiblemente, registrar el evento correspondiente en
+  `historial_pedido` — ese es el escenario más probable donde sí se
+  necesitará `prisma.$transaction` real entre dos entidades (`pedidos` +
+  `historial_pedido`) en todo el proyecto hasta ahora.
+- **Fase de Historial de Pedidos**: deberá decidir si el cambio de
+  `estado` en `pedidos` y el registro del evento en `historial_pedido` se
+  hacen siempre atómicamente (esta fase no lo implementó, tal como se
+  pidió).
+- **Observación menor**: a diferencia de Perfiles de Motorizados,
+  `creadoPorId` en Pedidos no se validó contra `activo`/`rol`
+  (administrador), porque esta fase no lo exigió explícitamente. Si se
+  desea uniformar el criterio, sería una decisión a aprobar antes de
+  implementarla.
+
+---
+
+## Fase 8 — Flujo operativo del pedido (Historial y Evidencias Fotográficas)
+
+**Fecha:** 2026-07-12
+
+### Alcance de esta fase
+
+Casos de uso reales de negocio (ya no CRUD): **Confirmar Recojo** (CU08),
+**Iniciar Ruta** (CU09), **Confirmar Entrega** (CU10); más los módulos de
+solo lectura **Historial de Pedidos** y **Fotos de Entrega**. No se
+modificó ningún módulo anterior (Usuarios, Auth, Tiendas, Sucursales,
+Clientes, Perfiles de Motorizados, Pedidos) ni el `schema.prisma`. No se
+implementaron Incidentes.
+
+### Puntos consultados y resueltos antes de implementar
+
+**1. Falta "Asignar Motorizado" (CU05) como precondición.** Confirmar
+Recojo exige que el pedido ya esté `asignado` con un `motorizado_actual_id`
+— pero esa asignación (CU05) no está implementada (diferida desde la Fase
+7, y no incluida en el alcance de esta fase). **Decisión aprobada:** no se
+implementó ningún endpoint de asignación; para las pruebas se preparó la
+precondición (`estado='asignado'`, `motorizado_actual_id`) directamente en
+la base de datos vía SQL, sin exponer esa capacidad por la API.
+
+**2. ¿Iniciar Ruta necesita `motorizadoId`?** La lista de requisitos de
+Iniciar Ruta no mencionaba "verificar motorizado" (a diferencia de los
+otros dos casos de uso), pero `historial_pedido.usuario_id` es `NOT NULL`
+y CU09 dice que el actor es el Motorizado. **Decisión aprobada:** sí, se
+exige `motorizadoId` también en Iniciar Ruta, verificado contra
+`pedido.motorizado_actual_id`, igual que en los otros dos casos de uso.
+
+### Casos de uso implementados
+
+- **Confirmar Recojo** (`POST /pedidos/:id/confirmar-recojo`): valida
+  pedido existente, motorizado válido y asignado a ese pedido, y
+  `estado === 'asignado'`. Dentro de una única transacción: actualiza
+  `pedidos.estado` a `recogido`, crea una fila en `fotos_entrega`
+  (`tipo='recojo'`, `es_principal=true` siempre, ya que solo hay una foto
+  de recojo), y crea el evento en `historial_pedido`
+  (`tipo_evento='cambio_estado'`, `estado='recogido'`,
+  `usuario_id` = el usuario del motorizado).
+- **Iniciar Ruta** (`POST /pedidos/:id/iniciar-ruta`): valida pedido,
+  motorizado asignado, y `estado === 'recogido'`. Transacción: actualiza
+  `pedidos.estado` a `en_ruta` y crea el evento de historial. **No**
+  registra fotos (tal como se pidió).
+- **Confirmar Entrega** (`POST /pedidos/:id/confirmar-entrega`): valida
+  pedido, motorizado asignado, y `estado === 'en_ruta'`. Acepta un arreglo
+  de 1 o más fotos (`ArrayMinSize(1)`) y unas `observaciones` opcionales.
+  Transacción: actualiza `pedidos.estado` a `entregado` (y
+  `pedidos.observaciones` si se envió), crea una fila en `fotos_entrega`
+  por cada foto del arreglo (`tipo='entrega'`, `es_principal` según lo que
+  indique cada foto, por defecto `false`), y crea el evento de historial.
+- **Historial de Pedidos** (`GET /pedidos/:id/historial`): solo lectura,
+  paginado, ordenado cronológicamente. No existe forma de crear, editar
+  ni eliminar un evento vía API — el repositorio de este módulo ni
+  siquiera expone un método de escritura.
+- **Fotos de Entrega** (`GET /pedidos/:id/fotos`): igual que el anterior,
+  solo lectura y paginado. El repositorio no expone ningún método de
+  escritura; las únicas fotos que pueden existir son las creadas por
+  Confirmar Recojo/Entrega.
+
+`pedidos.estado` sigue siendo la única fuente de verdad del estado actual;
+`historial_pedido` es trazabilidad pura — en ningún momento se calculó el
+estado a partir del historial.
+
+### Transacciones de Prisma (obligatorias para escrituras multi-tabla)
+
+Las 3 escrituras de negocio (Confirmar Recojo, Iniciar Ruta, Confirmar
+Entrega) modifican **2 o 3 tablas** (`pedidos` + `fotos_entrega` +
+`historial_pedido`, según el caso) y se ejecutan cada una dentro de un
+único `prisma.$transaction(async (tx) => {...})`, todas las escrituras
+usando el mismo cliente `tx`. Si cualquier escritura falla, Prisma revierte
+automáticamente todo el bloque — no queda ninguna operación parcial (por
+ejemplo, un cambio de estado sin su evento de historial correspondiente).
+Verificado con pruebas: tras cada caso de uso exitoso, se confirmó
+directamente en la base de datos que **todas** las filas esperadas
+(pedido actualizado + foto(s) + evento de historial) existen juntas, con
+los valores correctos (incluyendo `usuario_id` del motorizado, no del
+administrador).
+
+Todas las validaciones (pedido existe, motorizado válido y asignado,
+estado compatible) se ejecutan **antes** de abrir la transacción, para que
+ninguna transacción se inicie sobre una operación que ya se sabe inválida.
+
+### Decisión de arquitectura: dónde vive la escritura multi-tabla
+
+Para no modificar ningún archivo de los módulos Pedidos/Perfiles de
+Motorizados ya existentes, se creó un módulo nuevo y propio
+(`flujo-pedido`) con **su propio repositorio**, que es el único lugar del
+proyecto que escribe directamente en `pedidos`, `fotos_entrega` e
+`historial_pedido` juntos dentro de una transacción. Los módulos de
+lectura (`historial-pedido`, `fotos-entrega`) tienen sus propios
+repositorios, estrictamente de solo lectura (sin ningún método `crear`),
+reforzando a nivel de arquitectura — no solo de controller — la regla
+"no permitir crear historial/fotos manualmente". Las validaciones de
+`flujo-pedido` reutilizan `PedidosService.buscarPorId()` y
+`PerfilesMotorizadosService.buscarPorId()` (ya existentes, sin
+modificarlos) en vez de duplicar lógica.
+
+Cuatro controllers distintos (`PedidosController`, `HistorialPedidoController`,
+`FotosEntregaController`, `FlujoPedidoController`) comparten el prefijo
+`@Controller('pedidos')` sin conflicto, cada uno aportando sus propias
+sub-rutas — permite el diseño REST anidado (`/pedidos/:id/historial`,
+`/pedidos/:id/fotos`, `/pedidos/:id/confirmar-recojo`, etc.) sin tocar el
+`PedidosController` original de la Fase 7.
+
+### Estructura de los módulos
+
+```
+src/modules/historial-pedido/    (solo lectura)
+  dto/historial-pedido-response.dto.ts
+  interfaces/historial-pedido-repository.interface.ts  (solo buscarPorPedido)
+  historial-pedido.repository.ts
+  historial-pedido.mapper.ts
+  historial-pedido.service.ts   (valida pedido via PedidosService)
+  historial-pedido.controller.ts  (@Controller('pedidos'), GET ':id/historial')
+  historial-pedido.module.ts     (importa PedidosModule)
+
+src/modules/fotos-entrega/       (solo lectura)
+  dto/foto-entrega-response.dto.ts
+  interfaces/fotos-entrega-repository.interface.ts  (solo buscarPorPedido)
+  fotos-entrega.repository.ts
+  fotos-entrega.mapper.ts
+  fotos-entrega.service.ts
+  fotos-entrega.controller.ts    (@Controller('pedidos'), GET ':id/fotos')
+  fotos-entrega.module.ts
+
+src/modules/flujo-pedido/        (casos de uso de negocio)
+  dto/
+    foto-entrega-input.dto.ts   (urlImagen, esPrincipal opcional)
+    confirmar-recojo.dto.ts      (motorizadoId, urlImagen)
+    iniciar-ruta.dto.ts          (motorizadoId)
+    confirmar-entrega.dto.ts     (motorizadoId, fotos[], observaciones opcional)
+  interfaces/flujo-pedido-repository.interface.ts
+  flujo-pedido.repository.ts     (las 3 transacciones $transaction)
+  flujo-pedido.service.ts        (validaciones de negocio + orquestacion)
+  flujo-pedido.controller.ts     (@Controller('pedidos'), 3 POST)
+  flujo-pedido.module.ts         (importa PedidosModule, PerfilesMotorizadosModule)
+```
+
+### Endpoints implementados
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/v1/pedidos/:id/confirmar-recojo` | CU08 — foto de recojo, estado→`recogido`, historial |
+| POST | `/api/v1/pedidos/:id/iniciar-ruta` | CU09 — estado→`en_ruta`, historial (sin fotos) |
+| POST | `/api/v1/pedidos/:id/confirmar-entrega` | CU10 — foto(s) de entrega, estado→`entregado`, historial |
+| GET | `/api/v1/pedidos/:id/historial` | Consultar historial paginado de un pedido |
+| GET | `/api/v1/pedidos/:id/fotos` | Consultar fotos paginadas de un pedido |
+
+Documentado en Swagger, tags `Flujo de Pedido`, `Historial de Pedidos`,
+`Fotos de Entrega`.
+
+### Pruebas realizadas (manuales, contra MySQL real vía `node dist/src/main.js`)
+
+Precondición preparada vía SQL directo (tal como se aprobó):
+`pedidos.estado='asignado'` + `motorizado_actual_id` seteado en 3 pedidos
+de prueba.
+
+**Confirmar Recojo:** correcto (201, verificado en BD: `pedidos.estado`,
+`fotos_entrega` con `es_principal=1`, `historial_pedido` con
+`usuario_id` = usuario del motorizado); pedido inexistente (404); sin
+`urlImagen` (400); repetir sobre un pedido que ya no está `asignado`
+(409, mensaje indica el estado actual).
+
+**Iniciar Ruta:** correcto (201, verificado estado `en_ruta` +
+historial); pedido inexistente (404); pedido todavía en `asignado`
+(no `recogido`) → 409.
+
+**Confirmar Entrega:** con una fotografía (201, `observaciones` guardada
+en el pedido); con varias fotografías (201, verificado en BD: 2 filas en
+`fotos_entrega`, una `es_principal=1` y otra `0`); pedido inexistente
+(404); arreglo de fotos vacío (400, `ArrayMinSize`).
+
+**Historial:** consulta por pedido (200, paginado, orden cronológico);
+pedido inexistente (404).
+
+**Fotos:** consulta por pedido (200, paginado, muestra correctamente las
+2 fotos de un pedido con entrega múltiple); pedido inexistente (404).
+
+**Transacciones:** verificado en cada caso, vía consulta SQL directa
+posterior, que todas las filas esperadas de la operación (actualización
+de `pedidos` + fila(s) de `fotos_entrega` + evento de `historial_pedido`)
+existen juntas y con los valores correctos — ninguna operación quedó
+parcial.
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · suite de tests por defecto
+(unit + e2e) sigue pasando. Datos de prueba eliminados de la base de datos
+al finalizar.
+
+### Estado actual del desarrollo
+
+Módulos Usuarios, Auth, Tiendas, Sucursales, Clientes, Perfiles de
+Motorizados, Pedidos, Historial de Pedidos, Fotos de Entrega y Flujo de
+Pedido completos y verificados end-to-end. Sin Incidentes (fuera de
+alcance). Sin JWT/guards (diferido).
+
+### Observaciones para las siguientes fases
+
+- **CU05 "Asignar Motorizado" sigue pendiente**: es un prerrequisito real
+  para que el flujo completo (Pendiente → Asignado → Recogido → En Ruta →
+  Entregado) sea utilizable de punta a punta vía la API, sin preparar
+  nada manualmente en la base de datos.
+- Cuando se implemente Asignar Motorizado, probablemente también escriba
+  en `historial_pedido` (`tipo_evento='reasignacion'`, usando el campo
+  `motorizado_id` de esa tabla, que esta fase no utilizó en ningún
+  momento) — sería el primer caso real de ese tipo de evento.
+- Los estados alternativos del flujo (`cancelado`, `reprogramado`,
+  `devuelto`, `rechazado`, `cliente_ausente`) tampoco se implementaron en
+  esta fase — corresponden a los casos de uso CU04, CU11 y CU12, no
+  mencionados en el alcance de la Fase 8.
+
+---
+
+## Fase 9 — Casos de uso restantes del flujo del pedido
+
+**Fecha:** 2026-07-12
+
+### Alcance de esta fase
+
+Completa el flujo operativo del pedido dentro del **mismo módulo
+`flujo-pedido`** (sin crear módulos nuevos para estos casos de uso, tal
+como se indicó): **Asignar Motorizado** (CU05), **Reasignar Motorizado**
+(CU06), **Registrar Cliente Ausente** (CU11), **Registrar Rechazo**
+(CU12), **Reportar Incidente** (CU13) + el nuevo módulo **Incidentes**
+(CRUD parcial: crear/consultar/listar). No se modificó ningún módulo
+anterior, no se movió lógica ya implementada, y no se tocó el
+`schema.prisma`. No se implementaron reportes.
+
+### Ambigüedad funcional resuelta: CU13 y `historial_pedido`
+
+**Situación:** CU13 pedía "registrar historial", pero
+`TipoEventoHistorial` (Fase 2) solo tiene `cambio_estado` y
+`reasignacion` — ninguno representa "incidente reportado" — y esta
+misma fase decía explícitamente "no asumir cambios de estado" para
+CU13.
+
+**Decisión aprobada:** el módulo `incidentes` **no escribe en
+`historial_pedido`**. Solo crea la fila en `incidentes`. Si en el futuro
+se confirma que cierto tipo de incidente sí cambia el estado del pedido,
+ese cambio (no el incidente en sí) generaría su propio evento
+`cambio_estado`, igual que los demás casos de uso. Verificado con prueba:
+tras crear un incidente sobre un pedido con historial existente, el
+conteo de eventos de `historial_pedido` para ese pedido no cambió.
+
+Como consecuencia de esta decisión, el módulo `incidentes` quedó
+completamente autocontenido (no depende de `flujo-pedido` ni de
+`historial-pedido`), consistente con "toda escritura de historial debe
+seguir viniendo de flujo-pedido" — simplemente no hay escritura de
+historial que hacer aquí.
+
+### Casos de uso implementados (extendiendo `flujo-pedido`)
+
+- **Asignar Motorizado** (`POST /pedidos/:id/asignar-motorizado`, CU05):
+  valida pedido, motorizado y usuario administrador (existen), y que
+  `estado === 'pendiente'`. Transacción: actualiza `pedidos.estado` a
+  `asignado` y `pedidos.motorizado_actual_id`, y crea el evento de
+  historial (`cambio_estado`, `estado='asignado'`, `usuario_id` = el
+  administrador que asigna).
+- **Reasignar Motorizado** (`POST /pedidos/:id/reasignar-motorizado`,
+  CU06): valida pedido, que `motorizadoAnteriorId` coincida exactamente
+  con `pedido.motorizado_actual_id` actual ("validar motorizado
+  anterior"), que el nuevo motorizado exista, y que el usuario
+  administrador exista. Transacción: actualiza
+  `pedidos.motorizado_actual_id` (el `estado` no cambia — sigue siendo el
+  que tuviera) y crea el evento de historial (`reasignacion`,
+  `motorizado_id` = nuevo motorizado, sin `estado`).
+- **Registrar Cliente Ausente** (`POST /pedidos/:id/cliente-ausente`,
+  CU11): valida pedido, motorizado asignado (mismo patrón que Confirmar
+  Recojo/Entrega de la Fase 8) y `estado === 'en_ruta'`. Transacción:
+  `pedidos.estado` → `cliente_ausente` + historial. Sin fotos.
+- **Registrar Rechazo** (`POST /pedidos/:id/rechazo`, CU12): igual
+  patrón, `estado === 'en_ruta'` → `rechazado`. Sin fotos.
+
+### Decisiones técnicas — validaciones aplicadas por consistencia
+
+- **CU05/CU06 requieren un `usuarioId` explícito** (el administrador que
+  asigna/reasigna) — no se valida `activo`/`rol` sobre ese usuario, mismo
+  criterio ya aplicado a `creadoPorId` en Pedidos (Fase 7): la fase no lo
+  exigió explícitamente para estos casos tampoco.
+- **CU11/CU12 requieren `motorizadoId`** aunque no estaba en su lista
+  explícita de requisitos — mismo razonamiento ya aprobado en la Fase 8
+  para Iniciar Ruta (el actor es el Motorizado y `historial_pedido.usuario_id`
+  es `NOT NULL`; se aplicó el patrón ya validado, no una ambigüedad
+  nueva).
+- **CU06 no exige un estado precondición adicional** más allá de que
+  `motorizadoAnteriorId` coincida con el motorizado actualmente asignado
+  — esta fase no especificó en qué estados es válido reasignar, y
+  agregar una lista de estados excluidos habría sido inventar una regla.
+  La validación del "motorizado anterior" ya garantiza que el pedido
+  tiene una asignación vigente.
+- **`resuelto` no es un campo del `CreateIncidenteDto`**: siempre se crea
+  en `false` (default del esquema) — no tendría sentido que quien
+  reporta un incidente lo marque como resuelto al mismo tiempo, y de
+  todas formas no hay endpoint de actualización para cambiarlo después
+  (no solicitado esta fase).
+
+### Estructura (extensión de `flujo-pedido`, módulo nuevo `incidentes`)
+
+```
+src/modules/flujo-pedido/    (mismo modulo de la Fase 8, extendido)
+  dto/
+    asignar-motorizado.dto.ts        (motorizadoId, usuarioId)
+    reasignar-motorizado.dto.ts      (motorizadoAnteriorId, motorizadoNuevoId, usuarioId)
+    registrar-cliente-ausente.dto.ts (motorizadoId)
+    registrar-rechazo.dto.ts         (motorizadoId)
+  interfaces/flujo-pedido-repository.interface.ts  (+4 metodos)
+  flujo-pedido.repository.ts   (+4 transacciones $transaction)
+  flujo-pedido.service.ts      (+4 metodos, +UsuariosService inyectado)
+  flujo-pedido.controller.ts   (+4 endpoints POST)
+  flujo-pedido.module.ts       (+ importa UsuariosModule)
+
+src/modules/incidentes/      (modulo nuevo, CRUD parcial)
+  dto/
+    create-incidente.dto.ts    (pedidoId opcional, motorizadoId y tipo obligatorios)
+    incidente-response.dto.ts
+    list-incidentes-query.dto.ts  (+ pedidoId, motorizadoId, tipo, resuelto)
+  interfaces/incidentes-repository.interface.ts  (crear, buscarPorId, buscarMuchos — sin actualizar/eliminar)
+  incidentes.repository.ts
+  incidentes.mapper.ts
+  incidentes.service.ts    (valida pedido si se envia, motorizado siempre)
+  incidentes.controller.ts (@Controller('incidentes'), POST/GET/GET :id)
+  incidentes.module.ts     (importa PedidosModule, PerfilesMotorizadosModule)
+```
+
+### Endpoints implementados
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/v1/pedidos/:id/asignar-motorizado` | CU05 — estado→`asignado`, historial |
+| POST | `/api/v1/pedidos/:id/reasignar-motorizado` | CU06 — cambia motorizado, historial (`reasignacion`) |
+| POST | `/api/v1/pedidos/:id/cliente-ausente` | CU11 — estado→`cliente_ausente`, historial |
+| POST | `/api/v1/pedidos/:id/rechazo` | CU12 — estado→`rechazado`, historial |
+| POST | `/api/v1/incidentes` | CU13 — crear incidente (sin historial) |
+| GET | `/api/v1/incidentes` | Listar con paginación y filtros |
+| GET | `/api/v1/incidentes/:id` | Buscar por id |
+
+Documentado en Swagger, tags `Flujo de Pedido` e `Incidentes` (ya
+existentes/nuevo respectivamente).
+
+### Transacciones de Prisma
+
+Las 4 escrituras nuevas de `flujo-pedido` (Asignar, Reasignar, Cliente
+Ausente, Rechazo) modifican 2 tablas cada una (`pedidos` +
+`historial_pedido`) y se ejecutan dentro de un único
+`prisma.$transaction`, exactamente con el mismo patrón ya usado en la
+Fase 8. `incidentes.crear()` **no** usa transacción porque escribe en una
+sola tabla (`incidentes`) — no hay operación multi-tabla que proteger.
+
+Verificado con pruebas: tras Asignar y luego Reasignar sobre el mismo
+pedido, `historial_pedido` muestra ambos eventos completos y correctos
+(`cambio_estado`/`asignado` con `motorizado_id=NULL`, luego
+`reasignacion`/`motorizado_id=6` con `estado=NULL`), confirmando que cada
+transacción escribió todo lo esperado.
+
+### Pruebas realizadas (manuales, contra MySQL real vía `node dist/src/main.js`)
+
+**Asignar Motorizado:** correcto (201, `estado→asignado`,
+`motorizado_actual_id` seteado); pedido inexistente (404); motorizado
+inexistente (404); reintentar sobre un pedido que ya no está `pendiente`
+(409, mensaje con estado actual).
+
+**Reasignar Motorizado:** correcto (201, `motorizado_actual_id` cambia,
+`estado` no cambia, verificado en BD el evento `reasignacion`); pedido
+inexistente (404); motorizado nuevo inexistente (404);
+`motorizadoAnteriorId` que no coincide con el asignado (409).
+
+**Cliente Ausente:** correcto (201, `estado→cliente_ausente`, probado
+además llevando un pedido real por todo el flujo Asignar→Confirmar
+Recojo→Iniciar Ruta usando los endpoints de la Fase 8, sin necesidad de
+preparar nada por SQL esta vez); estado inválido — sin motorizado
+asignado (409) y con motorizado asignado pero en estado `asignado` en
+vez de `en_ruta` (409 con mensaje de estado específico).
+
+**Rechazo:** mismo patrón — correcto (201, `estado→rechazado`); estado
+inválido (409).
+
+**Incidentes:** crear con pedido (201); crear sin pedido, ya que es
+opcional "si aplica" (201, `pedidoId: null`); pedido inexistente (404);
+motorizado inexistente (404); consultar por id (200); listar (200,
+paginado); confirmado que crear un incidente no agrega ninguna fila a
+`historial_pedido`.
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · suite de tests por defecto
+(unit + e2e) sigue pasando. Datos de prueba eliminados de la base de
+datos al finalizar.
+
+### Estado actual del desarrollo
+
+Flujo completo del pedido implementado de punta a punta: Registrar →
+Asignar → Confirmar Recojo → Iniciar Ruta → Confirmar Entrega, con las
+ramas alternativas Reasignar, Cliente Ausente y Rechazo, más registro de
+Incidentes. Todos los módulos anteriores (Usuarios, Auth, Tiendas,
+Sucursales, Clientes, Perfiles de Motorizados, Pedidos, Historial de
+Pedidos, Fotos de Entrega) siguen intactos. Sin reportes (fuera de
+alcance de esta fase). Sin JWT/guards (diferido).
+
+### Cobertura funcional alcanzada
+
+CU01 (Registrar Pedido), CU02 (Consultar Pedido), CU03 (Editar Pedido),
+CU05 (Asignar Motorizado), CU06 (Reasignar Motorizado), CU07 (Ver
+Pedidos Asignados — vía filtro `motorizadoActualId` no implementado
+todavía como filtro directo, pendiente si se requiere), CU08 (Confirmar
+Recojo), CU09 (Iniciar Ruta), CU10 (Confirmar Entrega), CU11 (Cliente
+Ausente), CU12 (Rechazo), CU13 (Reportar Incidente), CU14 (Gestionar
+Tiendas), CU15 (Gestionar Motorizados), CU16 (Consultar Historial del
+Pedido), CU17 (Consultar Fotografías). Pendientes: CU04 (Cancelar
+Pedido), CU18–CU20 (reportes).
+
+### Observaciones para las siguientes fases
+
+- **CU04 "Cancelar Pedido"** no se implementó (fuera del alcance
+  explícito de las Fases 8 y 9) — usaría el mismo patrón de
+  `verificarEstado` + transacción `pedidos` + `historial_pedido` ya
+  establecido en `flujo-pedido`.
+- **CU07 "Ver Pedidos Asignados"**: el listado de Pedidos ya soporta
+  filtrar, pero no existe un filtro directo por `motorizadoActualId` en
+  `ListPedidosQueryDto` (Fase 7) — si se requiere para este caso de uso,
+  sería una extensión aditiva simple al filtro existente.
+- Próxima fase natural: reportes (CU18, CU19, CU20), que probablemente
+  reutilicen los filtros ya existentes de Pedidos/Historial/Incidentes
+  sin necesitar nueva lógica de escritura.
+
+## Fase 10 — Cancelación de Pedidos y Reportes
+
+**Fecha:** 2026-07-13
+
+### Alcance de esta fase
+
+Completa la lógica funcional restante: **Cancelar Pedido** (CU04, dentro
+del módulo `flujo-pedido` existente, sin usar el `PATCH` del CRUD de
+Pedidos) y el nuevo módulo de solo consulta **`reportes`** con **Reporte
+de Pedidos** (CU18), **Reporte de Entregas** (CU19) y **Reporte de
+Motorizados** (CU20). No se modificó ningún módulo anterior, no se movió
+lógica ya implementada, y no se tocó el `schema.prisma`.
+
+### Ambigüedades funcionales resueltas (aprobadas antes de implementar)
+
+**CU04 — ¿desde qué estados se puede cancelar un pedido?** La
+documentación no lo especifica. Se presentaron 3 alternativas (solo
+`pendiente`; `pendiente`/`asignado`; o cualquier estado activo antes de
+`entregado`). Se aprobó la más flexible: se puede cancelar desde
+`pendiente`, `asignado`, `recogido` o `en_ruta`. Los estados terminales
+(`entregado`, `cancelado`, `rechazado`, `devuelto`, `cliente_ausente`,
+`reprogramado`) quedan excluidos — intentarlo devuelve 409. La lista de
+estados cancelables vive como constante en `flujo-pedido.service.ts`.
+
+**CU20 — ¿cómo se calcula "productividad del motorizado"?** No hay
+fórmula definida y los otros 3 datos del reporte ya son conteos directos.
+Se presentaron 3 alternativas (tasa de entregas exitosas; tiempo promedio
+de entrega vía `historial_pedido`; ambas combinadas). Se aprobó la más
+simple: **productividad = (entregas / pedidos atendidos) × 100**,
+redondeada a 2 decimales, 0 si no tiene pedidos atendidos. No requiere
+consultas adicionales a las ya necesarias para los otros 3 conteos.
+
+### CU04 — Cancelar Pedido
+
+Endpoint independiente `POST /pedidos/:id/cancelar` dentro de
+`FlujoPedidoController` (mismo controlador que el resto del flujo, mismo
+prefijo `pedidos`). `CancelarPedidoDto` solo pide `usuarioId` (quien
+cancela, administrador — mismo patrón que Asignar/Reasignar Motorizado,
+ya que no hay auth/sesión de la que inferirlo).
+
+`FlujoPedidoService.cancelarPedido`: valida que el pedido exista (404) y
+que el usuario exista (404); valida que `pedido.estado` esté en la lista
+de estados cancelables (409 con el estado actual en el mensaje si no).
+Como `Pedido` no tiene `deletedAt` (eliminación física, decidido en Fase
+7), la validación "no eliminado" queda cubierta por la propia existencia
+del registro. `FlujoPedidoRepository.cancelarPedido` ejecuta en una única
+`prisma.$transaction`: actualiza `pedidos.estado = cancelado` y crea el
+evento `historial_pedido` (`tipo_evento = cambio_estado`,
+`estado = cancelado`, `usuario_id` del administrador).
+
+### Módulo nuevo: `reportes` (CU18, CU19, CU20)
+
+Módulo de solo lectura: únicamente controladores `GET`, sin crear,
+actualizar ni eliminar. Repositorio propio (`IReportesRepository` +
+`REPORTES_REPOSITORY`) que consulta Prisma directamente con `select`
+explícito (no reutiliza `PedidosMapper`/`PedidosService`, ya que el
+reporte necesita campos de `sucursal`/`tienda` que el CRUD de Pedidos no
+expone) — no importa otros módulos, solo `PrismaService`.
+
+- **`GET /reportes/pedidos`** (CU18): filtros combinables por
+  `fechaDesde`/`fechaHasta` (sobre `creadoEn`), `tiendaId` (filtro por
+  relación anidada `sucursal.tiendaId`, ya que `Pedido` no tiene
+  `tiendaId` directo), `estado` y `motorizadoId`. Paginado.
+- **`GET /reportes/entregas`** (CU19): por defecto trae pedidos en los 4
+  estados finales (`entregado`, `cancelado`, `devuelto`,
+  `reprogramado`); el filtro opcional `estado` debe ser uno de esos 4 o
+  responde 400. Filtro de fecha igual que CU18. Paginado.
+- **`GET /reportes/motorizados`** (CU20): por motorizado muestra
+  `pedidosAtendidos`, `entregas`, `incidentes` y `productividad`.
+  Filtros: `motorizadoId` y rango de fechas (acota `pedidosAtendidos` y
+  `entregas` por `creadoEn`; no acota `incidentes`, ver limitación de
+  modelo abajo). Paginado igual que el resto de listados del proyecto.
+
+**Definición de "pedidos atendidos" y optimización de consultas:**
+`pedidosAtendidos`/`entregas` se calculan sobre
+`Pedido.motorizadoActualId` (única relación directa entre `Pedido` y
+`PerfilMotorizado` en el modelo actual) agrupando con `prisma.groupBy`
+sobre los IDs de motorizados de la página actual; `incidentes` se agrupa
+igual sobre `Incidente.motorizadoId`. Son **3 consultas agregadas en
+total por página**, sin importar cuántos motorizados tenga esa página
+(sin N+1). `productividad` se calcula en `ReportesMapper` a partir de
+esos conteos, sin consultas adicionales.
+
+### Observación de limitación de modelo (sin modificar el schema)
+
+`Incidente` no tiene columna de fecha de creación (`schema.prisma`,
+Fase 2/9). Por eso el filtro de fecha de `GET /reportes/motorizados` no
+puede acotar el conteo de incidentes — se cuentan todos los incidentes
+históricos del motorizado sin importar el rango pedido. Verificado con
+prueba explícita (ver "Pruebas realizadas"). No se modificó el modelo;
+si se requiere acotar incidentes por fecha, sería necesario agregar
+`createdAt` a `Incidente` — mejora de arquitectura pendiente de
+aprobación.
+
+También, dado que `motorizadoActualId` se sobrescribe en cada
+reasignación (Fase 9) y el evento de asignación inicial no guarda
+`motorizadoId` en `historial_pedido` (solo el de reasignación lo hace),
+"pedidos atendidos" refleja el motorizado **actualmente** asignado a
+cada pedido, no el historial completo de motorizados que pudo tener un
+pedido reasignado. Es la única definición reconstruible con el modelo
+actual; se documenta como limitación conocida, no como bug.
+
+### Transacciones
+
+Solo `cancelarPedido` usa `prisma.$transaction` (escribe `pedidos` +
+`historial_pedido`). Los 3 endpoints de `reportes` son de solo lectura y,
+tal como pedía el alcance de la fase, no usan transacciones.
+
+### Pruebas realizadas
+
+Datos de prueba: 3 usuarios, 2 perfiles de motorizado, 2 tiendas, 2
+sucursales (una por tienda), 1 cliente, 6 pedidos.
+
+**Cancelar Pedido:** correcto desde `pendiente` (201), desde `asignado`
+(201), desde `recogido` (201, tras Confirmar Recojo), desde `en_ruta`
+(201, tras Confirmar Recojo + Iniciar Ruta) — verificado en los 4 casos
+que `historial_pedido` tiene el evento `cambio_estado`/`cancelado` con el
+`usuario_id` correcto; pedido inexistente (404); usuario inexistente
+(404); reintentar sobre un pedido ya `entregado` (409); reintentar sobre
+un pedido ya `rechazado` (409).
+
+**Reporte de Pedidos:** filtro por `tiendaId` solo, por `estado` solo,
+por `motorizadoId` solo, combinación `tiendaId`+`estado`,
+combinación `motorizadoId`+`estado`+rango de fechas, sin filtros, y
+paginación (`limit`/`page`) — todos devolvieron los subconjuntos
+esperados y el `total` correcto.
+
+**Reporte de Entregas:** sin filtro (trae los 4 estados finales, no el
+`rechazado`), filtro por cada uno de los 4 estados válidos, estado
+inválido (`asignado` → 400 con el mensaje de los 4 estados permitidos),
+rango de fechas futuro que excluye todos los resultados (`total: 0`).
+
+**Reporte de Motorizados:** verificado el cálculo manual contra los
+datos de prueba para los 2 motorizados (2 atendidos/1 entrega/0
+incidentes/productividad 50 el primero; 3 atendidos/0 entregas/1
+incidente/productividad 0 el segundo); filtro por `motorizadoId`;
+paginación (`limit=1`, páginas 1 y 2); motorizado inexistente (200,
+`data: []`); filtro de fecha futura confirmando la limitación de modelo
+documentada (pedidos atendidos y entregas en 0, pero el incidente se
+sigue contando).
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · suite de tests por defecto
+(unit + e2e) sigue pasando. Regresión rápida sobre endpoints de fases
+anteriores (listar Pedidos, listar Incidentes, Historial y Fotos de un
+pedido) sin cambios de comportamiento. Documentación Swagger verificada
+(`/api/docs-json`): tag `Reportes` y las 3 rutas de reportes presentes,
+además de `POST /pedidos/{id}/cancelar`. Datos de prueba eliminados de la
+base de datos al finalizar.
+
+### Estado actual del desarrollo
+
+Con esta fase queda implementada **toda la lógica funcional de negocio**
+definida hasta el momento: flujo completo del pedido (incluyendo
+cancelación) y los 3 reportes. Todos los módulos anteriores permanecen
+intactos. Sigue sin implementarse JWT/guards (diferido desde el inicio
+del proyecto, no forma parte de ningún CU funcional).
+
+### Cobertura funcional alcanzada
+
+CU01–CU20 implementados, con la salvedad de CU07 (Ver Pedidos Asignados)
+que sigue sin un filtro directo por motorizado en el listado de Pedidos
+(mencionado como observación desde la Fase 9; los reportes de esta fase
+sí soportan ese filtro para su propio propósito). No quedan casos de uso
+funcionales pendientes de la documentación provista.
+
+### Observaciones para las siguientes fases
+
+- **Incidente sin fecha de creación**: si se necesita acotar reportes de
+  incidentes por rango de fechas, se requeriría agregar `createdAt` a
+  `Incidente` — mejora de modelo pendiente de aprobación (no aplicada).
+- **CU07 "Ver Pedidos Asignados"**: sigue pendiente como filtro directo
+  en `ListPedidosQueryDto` del CRUD de Pedidos (observación repetida de
+  la Fase 9, no resuelta en esta fase por no ser parte del alcance
+  explícito).
+- Con JWT/guards fuera de alcance, todos los endpoints de esta fase
+  siguen recibiendo `usuarioId`/`motorizadoId` explícitos en el body o
+  como filtro, igual que el resto del proyecto.
+
+## Fase 11 — Refactorización, Optimización y Auditoría del Backend
+
+**Fecha:** 2026-07-13
+
+### Alcance de esta fase
+
+Auditoría completa del backend sin agregar casos de uso, sin cambiar
+comportamiento funcional, sin JWT/guards/roles y sin tocar el schema de
+Prisma. Se revisó arquitectura, organización, dependencias,
+repositorios, servicios, DTOs, controllers, Prisma, configuración,
+manejo de errores, Clean Code (duplicación, métodos largos,
+responsabilidades mezcladas, imports innecesarios, código muerto,
+nombres, SOLID/DRY/KISS), consultas Prisma (N+1, selects, transacciones,
+índices), validaciones, documentación Swagger y rendimiento.
+
+### Metodología
+
+Se auditaron los 11 módulos de negocio completos, `src/common/`,
+`src/config/`, `src/prisma/`, `src/app.module.ts`, `src/main.ts` y
+`prisma/schema.prisma`, archivo por archivo (no por muestreo). Se
+verificó adicionalmente con `tsc --noEmit --noUnusedLocals
+--noUnusedParameters` (0 diagnósticos) y con búsqueda de
+`TODO|FIXME|HACK` y código comentado (0 coincidencias).
+
+### Problemas encontrados y corregidos (sin cambio de comportamiento funcional)
+
+1. **Duplicación del patrón "buscar por id o lanzar 404"**: 7 métodos
+   privados `obtenerXOFallar` casi idénticos en
+   usuarios/tiendas/sucursales/clientes/perfiles-motorizados/pedidos/incidentes.
+   Extraído a `src/common/utils/assert-found.util.ts`
+   (`assertFound<T>(entity, message)`), reutilizado en los 7 servicios.
+   Los mensajes de error por entidad se mantienen exactamente iguales.
+2. **Duplicación del manejo de errores de Prisma**: 4 implementaciones
+   distintas de "detectar P2002/P2003 y lanzar ConflictException".
+   Extraído a `src/common/utils/prisma-error.util.ts`
+   (`isUniqueConstraintViolation`, `isForeignKeyViolation`), reutilizado
+   en usuarios/tiendas/perfiles-motorizados/pedidos. Mismos códigos y
+   mensajes de excepción que antes.
+3. **Duplicación del cálculo de paginación**: `(query.page - 1) *
+   query.limit` repetido literalmente en 10 servicios. Se agregó un
+   getter `skip` a `PaginationQueryDto` (`src/common/dto/pagination-query.dto.ts`)
+   y se reemplazó en los 10 puntos de uso. Resultado idéntico (mismo
+   `skip`/`take` enviado a cada repositorio).
+4. **Duplicación mayor: 8 métodos de `flujo-pedido.repository.ts`** (los
+   8 casos de uso del flujo del pedido) repetían el mismo bloque de
+   escritura a `historial_pedido` dentro de su `$transaction`. Se
+   extrajo un método privado `crearEventoHistorial(tx, data)` reutilizado
+   por los 8 métodos, sin alterar los campos escritos en cada caso.
+5. **Insert de fotos uno por uno**: `confirmarEntrega` insertaba cada
+   foto de entrega con un `create` dentro de un `for`. Cambiado a un
+   único `fotoEntrega.createMany(...)` (mismo resultado, misma
+   transacción, una sola sentencia SQL en vez de N).
+6. **Round-trip redundante a la base de datos en `AuthService.login`**:
+   después de verificar la contraseña sobre la entidad ya obtenida
+   (`entidad`), se volvía a buscar el mismo usuario por id solo para
+   construir la respuesta. Se reemplazó por
+   `UsuariosMapper.toResponseDto(entidad)` directamente — mismo DTO de
+   salida, una consulta menos por login.
+7. **Documentación Swagger incompleta**:
+   - `PaginatedResponseDto.data` no tenía `@ApiProperty` (afectaba el
+     esquema de *todos* los endpoints paginados). Agregado.
+   - Ningún endpoint documentaba el `400` que puede producir el
+     `ValidationPipe` global (`whitelist: true, forbidNonWhitelisted:
+     true`) ni el que produce `ParseIntPipe` sobre un `:id` no numérico.
+     Se agregó `@ApiResponse({status: 400, ...})` a los ~52 endpoints
+     afectados (todos los que reciben `@Body()`, `@Query()` o
+     `@Param('id', ParseIntPipe)`), en los 12 controllers.
+   - `GET /` (scaffold de Nest) no tenía tag ni documentación. Se le
+     agregó `@ApiTags('Health')` + `@ApiOperation`/`@ApiResponse` y el
+     tag correspondiente en `main.ts` (el endpoint en sí no cambió: sigue
+     devolviendo `"Hello World!"`, solo se documentó).
+8. **Comentario de diseño inconsistente**: `tiendas.repository.ts`
+   documenta por qué `buscarPorNombre`/`buscarPorRuc` ignoran
+   `deletedAt` a propósito; `usuarios.repository.ts` tiene el mismo
+   diseño en `buscarPorUsuario`/`buscarPorCorreo` pero sin comentario.
+   Se agregó el comentario equivalente.
+
+Todos los cambios anteriores son refactors o documentación pura:
+mismos endpoints, mismos códigos HTTP, mismos mensajes de error, mismos
+datos devueltos — verificado con la regresión completa (ver más abajo).
+
+### Problemas encontrados y NO corregidos (requieren aprobación — no se tocó nada)
+
+- **Bug real en el filtro `resuelto` de Incidentes**
+  (`src/modules/incidentes/dto/list-incidentes-query.dto.ts`): usa
+  `@Type(() => Boolean)`, y `class-transformer` hace `Boolean(valor)`,
+  por lo que `?resuelto=false` (string `"false"`) se convierte en `true`
+  de JavaScript. El filtro para excluir incidentes resueltos está roto
+  hoy. **No se corrigió** porque cambiar el resultado de esa consulta es
+  un cambio de comportamiento observable, explícitamente fuera de
+  alcance de esta fase. Recomendación: reemplazar por
+  `@Transform(({value}) => value === 'true')` en una fase dedicada,
+  previa aprobación.
+- **CORS `origin: '*'` + `credentials: true`** (`main.ts` +
+  `configuration.ts`): combinación contradictoria según la
+  especificación CORS — con origin comodín, las peticiones con
+  credenciales fallan silenciosamente en el navegador si
+  `CORS_ORIGIN` no se configura explícitamente. No se modificó (cambia
+  comportamiento de runtime). Recomendación: definir un `CORS_ORIGIN`
+  concreto por ambiente, o no usar `credentials: true` mientras el
+  origen sea comodín.
+- **`reasignarMotorizado` no valida el estado del pedido** (a diferencia
+  de sus 5 métodos hermanos en `flujo-pedido.service.ts`, que sí llaman
+  `verificarEstado`): hoy se puede reasignar motorizado aunque el pedido
+  ya esté en un estado terminal, siempre que `motorizadoActualId`
+  coincida. Es una inconsistencia real frente al resto del módulo, pero
+  agregar la validación cambiaría qué pedidos aceptan reasignación
+  (podría romper flujos actualmente permitidos). No definido en la
+  documentación funcional de la Fase 9. Requiere decisión funcional, no
+  un fix de auditoría.
+- **Validaciones/paralelización de lecturas independientes**
+  (`pedidos.service.crear`, y varios métodos de
+  `flujo-pedido.service.ts`) hacen 2-3 `await` secuenciales a servicios
+  independientes (ej. sucursal, cliente, usuario) en vez de
+  `Promise.all`. Es una oportunidad de rendimiento real, pero
+  paralelizar cambia el orden en que se evalúan los `NotFoundException`
+  cuando *más de una* referencia es inválida a la vez (hoy es
+  determinístico por orden de código; en paralelo pasa a depender de
+  qué promesa resuelve primero). Se documenta como recomendación de
+  rendimiento, no se aplica, porque altera un comportamiento observable
+  en un caso límite.
+- **Falta de columna de fecha en `Incidente`**: ya documentado en la
+  Fase 10 (impide acotar el reporte de motorizados por fecha en el
+  conteo de incidentes). Sigue pendiente de aprobación, no se tocó el
+  modelo.
+- **Sin esquema Swagger completo para el genérico `PaginatedResponseDto<T>`**:
+  se agregó `@ApiProperty({isArray: true})` a `data` (mejor que nada),
+  pero el tipo real de cada item (`T`) no se refleja en el schema sin
+  agregar `@ApiExtraModels` + `getSchemaPath` en cada uno de los ~12
+  controllers con listados — se documenta como mejora pendiente de
+  aprobación por el volumen de cambio que implica (no es un cambio de
+  comportamiento, pero sí un cambio de alcance mayor al de esta
+  auditoría).
+
+### Revisión de arquitectura (sin cambios, solo verificación)
+
+- **Grafo de dependencias entre módulos**: DAG estricto, sin ciclos.
+  `usuarios`(sin deps) → `auth`, `perfiles-motorizados`; `tiendas`(sin
+  deps) → `sucursales`; `clientes`(sin deps); `pedidos`(sucursales,
+  clientes, usuarios) → `historial-pedido`, `fotos-entrega`,
+  `flujo-pedido`(+ perfiles-motorizados, usuarios), `incidentes`(+
+  perfiles-motorizados); `reportes`(sin deps, solo Prisma directo).
+- **Repositorios**: los 12 repositorios usan `PrismaService` de forma
+  consistente y ninguno hace lógica de negocio.
+- **Mappers**: conversión `BigInt → string` y `Decimal → string`
+  consistente en todos los mappers (ninguno se serializa directo, todos
+  pasan por `.toString()`).
+- **DTOs**: uso consistente de `@IsOptional()` en campos opcionales, de
+  `PaginationQueryDto` como base de todo listado, y del trío
+  `@Type(() => Number) @IsInt() @Min(1)` para filtros por id.
+- **Servicios inyectando servicios concretos de otros módulos** (en vez
+  de interfaces): patrón consistente en todo el proyecto para
+  composición intra-dominio (ej. `SucursalesService` depende de
+  `TiendasService`). Es una decisión arquitectónica de bajo riesgo ya
+  asumida desde la Fase 4, no una violación — se revisó explícitamente
+  porque el checklist de esta fase lo pedía.
+
+### Rendimiento y consultas Prisma
+
+- `reportes.repository.ts` (Fase 10) ya evita N+1 vía `groupBy` +
+  `Promise.all` (3 consultas agregadas sin importar cuántos motorizados
+  tenga la página) — verificado, sin cambios.
+- `confirmarEntrega` ahora usa `fotoEntrega.createMany` en vez de N
+  `create` (ver correcciones aplicadas).
+- Ninguna consulta usa `include`/`select` de más: cada repositorio trae
+  solo lo que su mapper consume.
+- Índices existentes (`@@index([estado])`, `@@index([creadoEn])` en
+  Pedido; `@@index([pedidoId, createdAt])` en HistorialPedido;
+  `@@index([pedidoId, tipo])` en FotoEntrega; `@@index([motorizadoId,
+  resuelto])` en Incidente; `@@index([estado])` en PerfilMotorizado)
+  cubren los filtros realmente usados en los `where` de cada módulo. No
+  se detectaron filtros frecuentes sin índice de soporte.
+
+### Pruebas realizadas
+
+`prisma validate` ✓ · `prisma generate` ✓ · `tsc --noEmit` ✓ ·
+`npm run build` ✓ · `npm run lint` ✓ · `npm test` (unit) ✓ · `npm run
+test:e2e` ✓.
+
+Regresión completa contra MySQL real cubriendo endpoints de **todas**
+las fases anteriores: health root; Auth (register/login correcto e
+incorrecto, verificando puntualmente que el fix del round-trip
+redundante sigue devolviendo los mismos datos); Usuarios (crear,
+duplicado 409, validación 400, id inválido 400 vía ParseIntPipe,
+listar); Tiendas/Sucursales/Clientes/Perfiles de Motorizados (crear,
+conflictos 404/409); ciclo completo de un pedido
+Asignar→Confirmar Recojo→Iniciar Ruta→Confirmar Entrega con 3 fotos
+(verificando puntualmente el `createMany` y el helper de historial
+compartido, comparando historial y fotos resultantes contra lo
+esperado); Reasignar Motorizado + Cancelar Pedido (verificando que el
+409 al reintentar sobre un pedido ya cancelado sigue igual); Incidentes;
+los 3 reportes (incluyendo el 400 por estado inválido en Reporte de
+Entregas). Documentación Swagger regenerada y verificada
+(`/api/docs-json`): 13 tags (incluye el nuevo `Health`), 52 respuestas
+`400` documentadas. Datos de prueba eliminados de la base de datos al
+finalizar.
+
+### Estado actual del desarrollo
+
+Todo el comportamiento funcional de las Fases 1–10 permanece intacto y
+verificado por regresión. El código es más DRY (duplicación real
+reducida en 6 puntos concretos), la documentación Swagger está
+completa para los códigos de error 400/404/409, y `confirmarEntrega`
+hace una escritura SQL en vez de N para las fotos. No se agregó ningún
+caso de uso, no se tocó el schema de Prisma, no se implementó
+JWT/guards/roles.
+
+### Deuda técnica identificada (pendiente de aprobación explícita)
+
+1. Bug del filtro `resuelto` en Incidentes (ver arriba) — el de mayor
+   severidad real, aunque no afecta ningún flujo probado en fases
+   anteriores porque nunca se probó `resuelto=false` explícitamente.
+2. Configuración CORS contradictoria (`origin: '*'` + `credentials:
+   true`).
+3. `reasignarMotorizado` sin validación de estado del pedido
+   (inconsistente con sus 5 métodos hermanos).
+4. Paralelización pendiente de validaciones independientes en
+   `pedidos.service.crear` y varios métodos de `flujo-pedido.service.ts`
+   (mejora de rendimiento, no de corrección).
+5. `Incidente` sin columna de fecha (arrastrada desde la Fase 10).
+6. Esquema Swagger genérico de `PaginatedResponseDto<T>` no refleja el
+   tipo real de cada item sin `@ApiExtraModels` por controller.
+7. JWT/autenticación por token, guards y roles siguen sin implementarse
+   (diferido desde el inicio del proyecto, no es deuda nueva).
+
+## Fase 12 — Cierre Definitivo del Backend
+
+**Fecha:** 2026-07-13
+
+### Alcance de esta fase
+
+Fase de cierre: **no** se repitió la auditoría de la Fase 11. Se
+trabajó exclusivamente sobre 2 de los 6 hallazgos documentados como
+"pendientes de aprobación" en esa fase (los 2 que el cliente aprobó
+corregir: el bug de `resuelto` y la configuración de CORS), más la
+revisión puntual de `reasignarMotorizado` que quedó pendiente de
+decisión. No se tocó el modelo de datos, no se agregaron endpoints,
+DTOs, servicios ni módulos nuevos, no se implementó JWT/guards/roles.
+
+### Corrección 1 — Filtro `resuelto` de Incidentes
+
+**Causa raíz real (más profunda de lo documentado en la Fase 11):** no
+bastaba con reemplazar `@Type(() => Boolean)` por un `@Transform`
+manual. El `ValidationPipe` global usa `enableImplicitConversion: true`
+(`main.ts`), y `class-transformer`, al no encontrar un `@Type()`
+explícito, igual detecta vía `reflect-metadata` que la propiedad es de
+tipo `boolean` y aplica su propia conversión `Boolean(valor)` **antes**
+de ejecutar cualquier `@Transform` — pisando su resultado. Se comprobó
+esto de forma aislada (`plainToInstance` directo) antes de corregir:
+tanto `"true"` como `"false"` colapsaban al mismo valor final.
+
+**Solución aplicada**
+(`src/modules/incidentes/dto/list-incidentes-query.dto.ts`):
+`@Type(() => String)` antes del `@Transform`. Como el valor real que
+llega desde el query siempre es un string, `String(valor)` es una
+transformación identidad — evita que `class-transformer` dispare su
+conversión implícita a `Boolean`, y deja que el `@Transform` reciba el
+string original sin tocar. El `@Transform` reconoce `'true'/'1'` →
+`true`, `'false'/'0'` → `false`, y cualquier otro valor lo deja intacto
+para que `@IsBoolean()` lo rechace con 400 (mensaje explícito:
+"resuelto debe ser un valor booleano (true, false, 1 o 0)").
+
+Verificado end-to-end contra MySQL real con un incidente `resuelto:
+false` conocido: `resuelto=false` y `resuelto=0` lo devuelven;
+`resuelto=true` y `resuelto=1` devuelven vacío; `resuelto=maybe` → 400
+con el mensaje esperado; sin el filtro, se sigue listando igual que
+antes. No se modificó ninguna otra validación del proyecto.
+
+### Corrección 2 — Configuración de CORS
+
+**Antes:** `corsOrigin: process.env.CORS_ORIGIN ?? '*'` (con default
+`'*'` tanto en `configuration.ts` como en `env.validation.ts`) combinado
+con `credentials: true` en `main.ts` — combinación inválida según la
+especificación CORS si la variable de entorno no se configura.
+
+**Después:**
+- `CORS_ORIGIN` pasa a ser **obligatoria** en `env.validation.ts`
+  (`@IsNotEmpty()`, sin valor por defecto), exactamente el mismo patrón
+  ya usado para `DATABASE_URL` desde la Fase 1 — la aplicación no
+  levanta si falta, en vez de caer silenciosamente a un comodín
+  inseguro.
+- `configuration.ts` ahora parsea `CORS_ORIGIN` como una **lista
+  separada por comas** (`corsOrigin: string[]`), permitiendo declarar
+  varios orígenes (ej. distintos frontends de desarrollo/staging/
+  producción) sin escribir ningún origen en el código — ambos quedan
+  únicamente en `.env`/`.env.example`.
+- `main.ts` no se modificó: `app.enableCors({ origin: corsOrigin,
+  credentials: true })` ya funcionaba igual pasándole un array de
+  orígenes (soportado nativamente por el paquete `cors`).
+- `.env` y `.env.example` actualizados solo con un comentario
+  explicando el formato (lista separada por comas) y un ejemplo con
+  múltiples orígenes para producción; el valor real de desarrollo
+  (`http://localhost:5173`, ya presente desde antes, anticipando el
+  frontend) no cambió.
+
+Verificado: petición preflight con `Origin: http://localhost:5173`
+responde `Access-Control-Allow-Origin: http://localhost:5173` (origen
+reflejado, no `*`); la misma petición con un origen no listado no
+recibe cabecera `Access-Control-Allow-Origin` (seria bloqueada por el
+navegador). Verificado también, de forma aislada (sin tocar el `.env`
+real), que `env.validation.ts` rechaza `CORS_ORIGIN` vacío con un
+error claro al arrancar.
+
+### Revisión de `reasignarMotorizado` — sin cambios
+
+Se revisó exclusivamente si existía alguna regla funcional documentada
+que restrinja desde qué estados de `Pedido` se permite reasignar
+motorizado. No se dispone, en ningún mensaje de fase de este proyecto,
+de una regla que lo defina — solo se especificó (Fase 9) que debe
+coincidir el motorizado anterior. Siguiendo la regla general del
+proyecto ("nunca inventar reglas de negocio"), **se mantiene
+exactamente el comportamiento actual**: `reasignarMotorizado` no valida
+`estado`, solo que `motorizadoActualId` coincida con
+`motorizadoAnteriorId`. Verificado explícitamente contra MySQL real que
+sigue permitiendo reasignar sobre un pedido ya `cancelado` (mismo
+comportamiento que antes de esta fase). La inconsistencia frente a sus
+5 métodos hermanos (que sí validan estado) permanece documentada como
+observación abierta; no se resuelve sin una definición explícita de la
+documentación funcional o una decisión del cliente.
+
+### Optimizaciones descartadas explícitamente
+
+Ninguna de las oportunidades de rendimiento documentadas en la Fase 11
+(paralelizar validaciones independientes con `Promise.all` en
+`pedidos.service.crear` y en varios métodos de
+`flujo-pedido.service.ts`) se implementó en esta fase, por instrucción
+explícita: cambiaría el orden en que se evalúan las validaciones y, por
+lo tanto, cuál error se reporta primero cuando más de una referencia es
+inválida a la vez. Se mantiene el comportamiento secuencial exacto.
+
+### Modelo de datos
+
+No se tocó `schema.prisma`, migraciones, índices ni relaciones. La
+observación pendiente sobre `Incidente` sin columna de fecha (Fase 10)
+sigue abierta, solo documentada.
+
+### Calidad de código
+
+Durante estas correcciones no quedaron imports ni variables sin uso
+(verificado con `tsc --noEmit --noUnusedLocals --noUnusedParameters`,
+0 diagnósticos) ni comentarios obsoletos generados por esta fase. No se
+realizó ninguna refactorización general, reorganización de módulos ni
+movimiento de archivos fuera de los 4 archivos tocados.
+
+### Swagger
+
+Se revisó únicamente la documentación del campo `resuelto` afectado por
+la Corrección 1 (su `@ApiPropertyOptional` ya refleja "acepta true/false
+o 1/0", agregado en la propia corrección). Ningún endpoint, request ni
+response cambió; no se tocó el resto de la documentación Swagger.
+
+### Archivos modificados en esta fase
+
+- `src/modules/incidentes/dto/list-incidentes-query.dto.ts` (Corrección 1)
+- `src/config/configuration.ts` (Corrección 2)
+- `src/config/env.validation.ts` (Corrección 2)
+- `.env`, `.env.example` (comentarios de formato, Corrección 2)
+
+Ningún otro archivo del proyecto fue modificado. `ARCHITECTURE.md` y
+`API_OVERVIEW.md` no se actualizaron: ninguna corrección cambió la
+arquitectura, los módulos, los endpoints ni las respuestas documentadas
+en esos archivos.
+
+### Pruebas realizadas
+
+`prisma validate` ✓ (schema sin cambios) · `prisma generate` ✓ ·
+`tsc --noEmit` ✓ · `npm run build` ✓ · `npm run lint` ✓ (solo formato
+Prettier) · `npm test` (unit) ✓ · `npm run test:e2e` ✓.
+
+Regresión completa contra MySQL real cubriendo los módulos
+principales: Auth (login, verificando que el fix de la Fase 11 sigue
+igual), Usuarios/Tiendas/Sucursales/Clientes/Perfiles de Motorizados
+(creación básica), ciclo de Pedido (crear → asignar → cancelar),
+Reasignar Motorizado sobre un pedido ya cancelado (comportamiento sin
+cambios, verificado explícitamente), e Incidentes con los 5 casos del
+filtro `resuelto` (false/true/1/0/inválido) contra un incidente real en
+base de datos. Verificación adicional de CORS con peticiones preflight
+reales (origen permitido vs. no permitido) y de la validación de
+arranque de `CORS_ORIGIN` de forma aislada. Datos de prueba eliminados
+de la base de datos al finalizar; servidor de pruebas detenido.
+
+### Observaciones nuevas detectadas durante esta fase (solo documentadas, sin actuar)
+
+- La causa raíz real del bug de `resuelto` era más profunda que lo
+  documentado en la Fase 11 (interacción entre `enableImplicitConversion`
+  del `ValidationPipe` global y la metadata de tipo reflejada por
+  TypeScript, no solo el uso de `@Type(() => Boolean)`). Vale la pena
+  tenerlo presente para cualquier futuro filtro `boolean` en el
+  proyecto: **cualquier DTO que agregue un filtro booleano por query
+  debe usar el mismo patrón `@Type(() => String)` + `@Transform`
+  manual**, no `@Type(() => Boolean)` a secas, para evitar reintroducir
+  el mismo bug.
+
+### Estado final del backend
+
+- **Funcionalmente completo**: sí. Todos los casos de uso documentados
+  (CU01–CU20) están implementados y probados; esta fase no agregó ni
+  quitó ninguno.
+- **Técnicamente estable**: sí. Las 2 correcciones aplicadas son
+  acotadas, verificadas de forma aislada y end-to-end, sin efectos
+  secundarios detectados en el resto del sistema.
+- **Libre de errores de compilación**: sí. `tsc --noEmit`, `build` y
+  `lint` limpios; suites unit y e2e pasando.
+- **Listo para comenzar el desarrollo del frontend**: sí. La API es
+  estable, está documentada (Swagger completo, `ARCHITECTURE.md`,
+  `API_OVERVIEW.md`), y el `CORS_ORIGIN` configurado hoy
+  (`http://localhost:5173`) ya anticipa un frontend local corriendo en
+  Vite.
+- **Preparado para una futura implementación de JWT sin
+  refactorizaciones importantes**: sí, con matices ya documentados en
+  fases previas — todos los endpoints que necesitan "quién realiza la
+  acción" ya reciben ese dato explícito en el body (`usuarioId`,
+  `motorizadoId`, `creadoPorId`), por lo que introducir JWT
+  significaría agregar guards + extraer esos valores del token en vez
+  del body, sin cambiar la forma de los servicios/repositorios. Las
+  observaciones abiertas (bug histórico ya corregido, `reasignarMotorizado`
+  sin validación de estado, paralelización pendiente, `Incidente` sin
+  fecha, Swagger genérico de paginación) no bloquean el frontend: son
+  mejoras o decisiones de negocio pendientes, no defectos funcionales
+  activos conocidos.
+
+**A partir de esta fase, el backend queda en feature freeze**: cualquier
+cambio posterior debe responder a un bug crítico descubierto durante el
+desarrollo del frontend o a un nuevo requerimiento del cliente, no a
+refactorizaciones espontáneas.
