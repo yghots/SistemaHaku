@@ -43,6 +43,13 @@ export class PerfilesMotorizadosRepository implements IPerfilesMotorizadosReposi
     });
   }
 
+  buscarPorPlaca(placa: string): Promise<PerfilMotorizadoConUsuario | null> {
+    return this.prisma.perfilMotorizado.findUnique({
+      where: { placa },
+      include: INCLUDE_USUARIO,
+    });
+  }
+
   async buscarMuchos(
     params: BuscarPerfilesMotorizadosParams,
   ): Promise<{ data: PerfilMotorizadoConUsuario[]; total: number }> {

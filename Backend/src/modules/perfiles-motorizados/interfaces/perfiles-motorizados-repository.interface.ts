@@ -37,6 +37,7 @@ export interface IPerfilesMotorizadosRepository {
   buscarPorUsuarioId(
     usuarioId: bigint,
   ): Promise<PerfilMotorizadoConUsuario | null>;
+  buscarPorPlaca(placa: string): Promise<PerfilMotorizadoConUsuario | null>;
   buscarMuchos(
     params: BuscarPerfilesMotorizadosParams,
   ): Promise<{ data: PerfilMotorizadoConUsuario[]; total: number }>;

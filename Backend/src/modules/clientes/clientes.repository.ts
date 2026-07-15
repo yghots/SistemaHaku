@@ -20,6 +20,14 @@ export class ClientesRepository implements IClientesRepository {
     return this.prisma.cliente.findFirst({ where: { id, deletedAt: null } });
   }
 
+  buscarPorDocumentoIdentidad(
+    documentoIdentidad: string,
+  ): Promise<Cliente | null> {
+    return this.prisma.cliente.findFirst({
+      where: { documentoIdentidad, deletedAt: null },
+    });
+  }
+
   async buscarMuchos(
     params: BuscarClientesParams,
   ): Promise<{ data: Cliente[]; total: number }> {

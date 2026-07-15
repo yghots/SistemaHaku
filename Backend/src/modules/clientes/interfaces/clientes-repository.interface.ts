@@ -27,6 +27,9 @@ export interface BuscarClientesParams {
 export interface IClientesRepository {
   crear(data: CrearClienteData): Promise<Cliente>;
   buscarPorId(id: bigint): Promise<Cliente | null>;
+  buscarPorDocumentoIdentidad(
+    documentoIdentidad: string,
+  ): Promise<Cliente | null>;
   buscarMuchos(
     params: BuscarClientesParams,
   ): Promise<{ data: Cliente[]; total: number }>;

@@ -8,6 +8,7 @@ import {
   Store,
   TrendingUp,
   Truck,
+  Upload,
   User,
   Users,
   UsersRound,
@@ -34,6 +35,7 @@ const ADMIN_NAV_ITEMS: SidebarNavItem[] = [
   { label: 'Reporte de Pedidos', href: '/admin/reportes/pedidos', icon: ClipboardList },
   { label: 'Reporte de Entregas', href: '/admin/reportes/entregas', icon: PackageCheck },
   { label: 'Reporte de Productividad', href: '/admin/reportes/motorizados', icon: TrendingUp },
+  { label: 'Importaciones', href: '/admin/importaciones', icon: Upload },
   { label: 'Mi Perfil', href: '/admin/perfil', icon: User },
 ];
 
@@ -60,20 +62,31 @@ export function AdminLayout(): AdminLayoutHandle {
 
   const mount = el('main', {
     className:
-      'flex-1 overflow-y-auto p-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6',
+      'p-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6',
   });
 
-  const content = el(
+  // Unico contenedor con scroll de todo el panel (Bugfix, 2026-07-14):
+  // Navbar y Sidebar quedan fuera de este arbol y nunca se desplazan. El
+  // Footer vive dentro de esta misma area (despues de `mount`) para seguir
+  // perteneciendo al contenido y aparecer solo al llegar al final del
+  // scroll, en vez de quedar fijo en la pantalla.
+  const scrollArea = el(
     'div',
-    { className: 'flex min-h-screen flex-1 flex-col' },
-    navbar.element,
+    { className: 'min-h-0 flex-1 overflow-y-auto' },
     mount,
     Footer({ appName: env.appName }),
   );
 
+  const content = el(
+    'div',
+    { className: 'flex h-screen min-h-0 flex-1 flex-col' },
+    navbar.element,
+    scrollArea,
+  );
+
   const element = el(
     'div',
-    { className: 'flex min-h-screen bg-surface-muted' },
+    { className: 'flex h-screen bg-surface-muted' },
     sidebar.element,
     content,
   );

@@ -33,6 +33,7 @@ No existe autenticación por token (JWT) ni autorización por roles todavía: to
 | Fotos de Entrega        | CU17 — Consultar Fotografías (solo lectura)                                          |
 | Incidentes              | CU13 — Reportar Incidente (crear/consultar/listar, sin editar/eliminar)              |
 | Reportes                | CU18, CU19, CU20 (solo lectura)                                                      |
+| Importaciones           | Fase 19 — Importación masiva de Clientes, Tiendas y Motorizados                      |
 
 CU07 (Ver Pedidos Asignados) no tiene un filtro directo por motorizado en el listado de Pedidos; el mismo resultado se obtiene hoy vía `GET /reportes/pedidos?motorizadoId=`.
 
@@ -170,7 +171,22 @@ Cada endpoint `/reportes/{pedidos,entregas,motorizados}/export` acepta exactamen
 - `formato` (obligatorio): `xlsx` | `pdf` | `csv` | `json` | `xml`.
 - `generadoPor` (obligatorio, string, máx. 150 caracteres): nombre de quien genera el archivo — no hay JWT, se recibe explícito del cliente (mismo patrón que `creadoPorId`/`usuarioId` en otros módulos).
 
-La respuesta es el archivo binario (`Content-Type` según el formato, `Content-Disposition: attachment; filename="..."` con un nombre generado a partir del título del reporte y la fecha/hora de generación). Los 5 formatos contienen siempre la misma información: nombre del reporte, fecha de generación, usuario que lo generó, filtros aplicados, total de registros y los datos — nunca solo la tabla cruda. Ver `Backend/ARCHITECTURE.md` (§8) para la arquitectura de exportación.
+La respuesta es el archivo binario (`Content-Type` según el formato, `Content-Disposition: attachment; filename="..."` con un nombre generado a partir del título del reporte y la fecha/hora de generación). Los 5 formatos contienen siempre la misma información: nombre del reporte, fecha de generación, usuario que lo generó, filtros aplicados, total de registros y los datos — nunca solo la tabla cruda. Ver `Backend/ARCHITECTURE.md` (§7) para la arquitectura de exportación.
+
+### Centro de Importaciones (Fase 19)
+
+Único punto de entrada para importación masiva de Clientes, Tiendas y Motorizados, en Excel (.xlsx), JSON o XML.
+
+| Método | Ruta                                          | Descripción                                                                 |
+| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| GET    | `/importaciones/:entidad/plantilla`            | Descarga la plantilla oficial (`?formato=xlsx\|json\|xml`)                   |
+| POST   | `/importaciones/:entidad/analizar`             | Vista previa: valida y detecta duplicados sin escribir nada (`?formato=`)   |
+| POST   | `/importaciones/:entidad/confirmar`            | Importación real, transaccional por fila (`?formato=&usuarioId=`)           |
+| GET    | `/importaciones/historial`                     | Historial paginado (`?entidad=` opcional)                                    |
+| GET    | `/importaciones/historial/:id`                 | Detalle de una importación (incluye las filas duplicadas/inválidas)          |
+| GET    | `/importaciones/historial/:id/reporte-errores` | Descarga (o redescarga) el reporte de errores en Excel                       |
+
+`:entidad` es uno de `cliente`, `tienda`, `motorizado`. `analizar`/`confirmar` reciben el archivo como `multipart/form-data` (campo `archivo`); `confirmar` además exige `usuarioId` (quién confirma — no hay JWT, se recibe explícito, igual que `generadoPor` en exportación). Duplicados: Clientes por `documentoIdentidad`, Tiendas por `nombre`/`ruc`, Motorizados por `usuario` (ya con perfil) o `placa` — todas reglas ya implementadas en el CRUD de cada entidad, reutilizadas tal cual (ver `Backend/ARCHITECTURE.md` §8 y `DEVELOPMENT_PROGRESS.md` Fase 17 para el detalle, incluida la ambigüedad resuelta con el cliente sobre `documentoIdentidad`/`placa`). La importación de Motorizados nunca crea una cuenta de Usuario: `usuario` debe ser el login de una cuenta ya existente, con rol motorizado y activa.
 
 ## Máquina de estados de `Pedido`
 

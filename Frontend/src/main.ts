@@ -7,6 +7,7 @@ import { AuthLayout } from '@layouts/auth/auth-layout';
 import { RiderLayout } from '@layouts/rider/rider-layout';
 import { ClientesPage } from '@pages/admin/clientes/clientes.page';
 import { DashboardPage } from '@pages/admin/dashboard/dashboard.page';
+import { ImportacionesPage } from '@pages/admin/importaciones/importaciones.page';
 import { IncidentesPage } from '@pages/admin/incidentes/incidentes.page';
 import { MotorizadosPage } from '@pages/admin/motorizados/motorizados.page';
 import { PedidosPage } from '@pages/admin/pedidos/pedidos.page';
@@ -210,6 +211,17 @@ function mountAdminPanel(): void {
     {
       title: 'Reporte de Productividad',
       breadcrumb: [{ label: 'Reportes' }, { label: 'Productividad' }],
+    },
+  );
+
+  router.register(
+    '/admin/importaciones',
+    withAuth((container) => {
+      container.appendChild(ImportacionesPage());
+    }),
+    {
+      title: 'Importaciones',
+      breadcrumb: [{ label: 'Importaciones' }],
     },
   );
 

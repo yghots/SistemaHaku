@@ -290,7 +290,20 @@ El módulo Usuarios (`src/pages/admin/usuarios/`) es la **implementación de ref
 - **El nombre de archivo siempre se lee del header `Content-Disposition`** (`filenameFromContentDisposition`, `src/utils/download-file.ts`) — el frontend nunca genera ni inventa su propio nombre de archivo; el backend ya lo decide de forma determinista (título del reporte + timestamp).
 - **`responseType: 'blob'` en una request de axios puede traer un error como `Blob`, no como JSON**: `src/services/http/http-client.ts` ya lo resuelve (`resolveErrorBody`, Fase 18) parseando el `Blob` a texto/JSON antes de normalizar el `HttpError`. Cualquier nuevo servicio que use `responseType: 'blob'` no necesita repetir este manejo — ya está cubierto por el cliente HTTP central.
 
-## 25. Referencias
+## 25. Arquitectura de scroll del layout raíz (Bugfix, 2026-07-14)
+
+- **El único contenedor con scroll de la aplicación es el área de contenido principal. Sidebar y Navbar permanecen estáticos durante toda la navegación.** `AdminLayout`/`RiderLayout` acotan su raíz y su columna interna a `h-screen` (techo real, nunca `min-h-screen` — un mínimo no evita que el documento termine haciendo scroll) y delegan el scroll exclusivamente a un `scrollArea` (`min-h-0 flex-1 overflow-y-auto`, mismo patrón ya establecido en `Modal`, sección 7) que envuelve `mount` (donde el Router monta cada página) seguido de `Footer` — así `Footer` sigue perteneciendo al contenido y aparece únicamente al llegar al final de su scroll, nunca fijo en pantalla.
+- **Regla para cualquier layout nuevo o modificado**: si un contenedor debe comportarse como "raíz que nunca se desplaza" (Sidebar, Navbar, cualquier chrome de navegación futuro), acotar su ancestro a una altura real (`h-screen`/`h-full`, nunca `min-h-*`) y dar el scroll únicamente al contenedor de contenido (`min-h-0 flex-1 overflow-y-auto`) — nunca usar `position: fixed` como atajo para "fijar" navegación cuando el problema real es un contenedor sin techo de altura.
+- **Ninguna página individual necesita saber esto**: todo módulo (Dashboard, Usuarios, Pedidos, Reportes, etc.) se monta dentro de `mount` sin cambios — el comportamiento de scroll se hereda automáticamente del layout, nunca se configura por página.
+
+## 26. Centro de Importaciones y modales de varios pasos (Fase 19)
+
+- **Modal de varios pasos: un único `Modal`, contenido reemplazado por paso — nunca anidar un segundo Modal ni crear uno nuevo por paso.** `FormModal` (sección 12) sigue siendo el patrón de referencia para un único paso (formulario → guardar); para un flujo de varios pasos (ej. seleccionar archivo → analizar → vista previa → confirmar → resultado, o lista → detalle), construir el `Modal` con un `stepContainer`/`footerContainer` propios y reemplazar su contenido (`replaceChildren`) en cada paso. Ver `src/pages/admin/importaciones/import-wizard-modal.ts` y `historial-modal.ts` como referencia.
+- **Primer servicio que sube un archivo**: `src/services/importaciones.service.ts` arma un `FormData` (campo `archivo`) y lo envía por `httpClient.post` — ningún otro servicio del proyecto necesitaba esto hasta ahora. Reutilizar este mismo patrón (no crear un cliente HTTP aparte) para cualquier subida de archivo futura.
+- **Reutilizar `responseType: 'blob'` + `filenameFromContentDisposition` (Fase 18) para toda descarga binaria nueva** (plantillas, reportes de errores, o cualquier archivo futuro que el backend genere) — no reinventar la descarga por módulo.
+- **Metadata estática de un catálogo de entidades (nombre, descripción, campos, reglas) vive en un `*.config.ts` propio del módulo** (`entidad-importacion.config.ts`), nunca hardcodeada dentro del componente que la consume — permite agregar una entidad nueva (o, en otro módulo, un ítem de catálogo nuevo) sin tocar la lógica de UI.
+
+## 27. Referencias
 
 - `Backend/API_OVERVIEW.md` — endpoints, casos de uso, flujo del negocio.
 - `Backend/ARCHITECTURE.md` — arquitectura y decisiones técnicas del backend.

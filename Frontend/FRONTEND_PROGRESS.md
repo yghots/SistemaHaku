@@ -1652,3 +1652,94 @@ Verificado por lectura de código: `ExportButton` no introduce ninguna clase nue
 ### Problemas encontrados
 
 Ninguno bloqueante. Las dos correcciones de infraestructura (interceptor de errores para blobs, CORS `exposedHeaders`) se identificaron y resolvieron durante esta misma fase, antes de que afectaran a ningún usuario real.
+
+## Bugfix — Arquitectura de Layout: Scroll Independiente del Contenido
+
+Corrección de arquitectura, sin cambios funcionales: `AdminLayout` y `RiderLayout` hacían scroll como un único bloque (toda la página, incluidos Sidebar y Navbar, se desplazaba junto con el contenido) en vez de comportarse como un panel administrativo profesional (GitHub/Notion/Linear: navegación fija, solo el contenido se desplaza).
+
+### Causa raíz
+
+`content` (`flex flex-col`) y `element` (`flex`, fila) usaban `min-h-screen` — una altura **mínima**, no máxima. Sin ningún ancestro acotado exactamente a la altura del viewport, el `flex-1 overflow-y-auto` ya declarado en `mount` nunca tenía una caja limitada dentro de la cual desbordar: `mount` simplemente crecía junto con su contenido, empujando a `content`/`element` a crecer también más allá de `100vh`, y era el documento (`body`) el que terminaba haciendo scroll — arrastrando Navbar y Sidebar con él. `Footer`, al ser hermano de `mount` dentro del mismo `flex-col` sin tope, crecía con el resto en vez de aparecer solo al final del scroll del contenido.
+
+### Corrección
+
+- `element` y `content` pasan de `min-h-screen` a `h-screen` (techo real de `100vh`, no un piso).
+- Se introduce `scrollArea` (`min-h-0 flex-1 overflow-y-auto`, mismo patrón ya establecido en `Modal` — ver `CLAUDE.md` §7) como **único contenedor con scroll** de cada panel: contiene `mount` (donde el Router sigue montando cada página, sin cambios en el contrato `LayoutHandle`) y `Footer`, en ese orden. `Footer` deja de ser hermano de `mount` bajo un contenedor sin tope, y pasa a vivir dentro del área de scroll, apareciendo naturalmente solo al llegar al final del contenido.
+- `mount` deja de ser el elemento con `overflow-y-auto`/`flex-1` (ya no lo necesita: ahora es contenido simple dentro de `scrollArea`), conserva exactamente el mismo padding/safe-area que ya tenía.
+- `Navbar`/`Sidebar` no se modificaron: ya tenían `shrink-0` (`Navbar`) o su propio manejo de altura completa vía `stretch` (`Sidebar`, Desktop) / `position: fixed` (`Sidebar`, Drawer mobile) — el problema nunca estuvo en ellos, sino en el contenedor que los envolvía.
+- **`AuthLayout` se analizó y se dejó sin cambios**: no tiene Sidebar ni Navbar (los dos componentes que reportaban el síntoma), su contenido es siempre una tarjeta corta centrada verticalmente, y nunca se observó el bug ahí. Forzar la misma reestructuración habría arriesgado romper el centrado vertical de la tarjeta de login sin ningún beneficio real — fuera del alcance de este bugfix (`Corregir únicamente si realmente es necesario`).
+- **`html`/`body`/`#app`** (`src/styles/index.css`) se revisaron y **no requirieron cambios**: no tenían overflow explícito (el default `visible` nunca fue el problema), y una vez que `AdminLayout`/`RiderLayout` quedan acotados a `h-screen` con su propio scroll interno, ningún contenido vuelve a desbordar hacia el documento. Se verificó compilando el CSS de producción que `.h-screen{height:100vh}` y `.min-h-0{min-height:0}` se generan correctamente.
+
+### Por qué no se necesitó `position: fixed` ni otro hack
+
+La combinación `h-screen` (techo) + `flex` + `min-h-0` (permite que el hijo se encoja en vez de desbordar) + `overflow-y-auto` (en el único contenedor que debe scrollear) es exactamente el mismo patrón arquitectónico que ya usa `Modal` (`CLAUDE.md` §7) — se extendió esa misma convención al layout raíz en vez de introducir un mecanismo nuevo.
+
+### Verificaciones realizadas
+
+- **Drawer** (`Sidebar`, Fase 13): sin cambios de código; sigue siendo `position: fixed` en mobile (independiente de cualquier contenedor con scroll) y `stretch` en Desktop. El toggle `document.body.classList.add('overflow-hidden')` en `openDrawer`/`closeDrawer` sigue funcionando exactamente igual (ya no tenía nada que "prevenir" en la práctica una vez que el body no vuelve a desbordar, pero no se tocó por no ser imprescindible).
+- **Dropdown/Tooltip** (Portal a `document.body`, Fase 15/18): su reposicionamiento ya escuchaba `scroll` en fase de captura sobre `window` específicamente para detectar el scroll de *cualquier* contenedor interno (ver `CLAUDE.md` §18) — siguen reposicionándose correctamente con el nuevo `scrollArea` sin cambios.
+- **Reportes/Exportación** (Fase 9/18): ninguna página ni componente de Reportes fue tocado; siguen viviendo dentro de `mount`, ahora contenido simple de `scrollArea`.
+- Se buscó (`grep`) cualquier uso de `window.scrollTo`/`scrollTop`/`scrollIntoView`/posicionamiento `sticky` en todo `src/` que pudiera depender del scroll a nivel de documento — no se encontró ninguno.
+- `npx tsc --noEmit`, `npx eslint "src/**/*.ts"`, `npx prettier --check`, `npm run build` — los cuatro sin errores.
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — la comprobación visual de que Sidebar/Navbar permanecen fijos y de que únicamente el contenido se desplaza (Desktop/Tablet/Mobile, Drawer, Dark Mode) se hizo por análisis exhaustivo de la cascada de `flex`/`height`/`overflow` involucrada (no por interacción real en un navegador), verificando además que las clases Tailwind esperadas (`h-screen`, `min-h-0`) se compilan correctamente en el CSS de producción.
+
+### Archivos modificados
+
+- `src/layouts/admin/admin-layout.ts`
+- `src/layouts/rider/rider-layout.ts`
+
+Ningún otro layout, componente, página, ruta ni endpoint fue modificado.
+
+## Fase 19 — Centro de Importaciones
+
+Módulo administrativo nuevo: `Importaciones`. Único punto de entrada para importar masivamente Clientes, Tiendas y Motorizados (Excel/JSON/XML), con vista previa antes de escribir nada, confirmación transaccional por fila, historial y reporte de errores descargable. Consume el módulo backend nuevo `importaciones` (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 17).
+
+### Estructura
+
+`src/pages/admin/importaciones/`:
+
+- `importaciones.page.ts` — Centro de Importaciones: `PageHeader` + una `Card` por entidad soportada.
+- `entidad-importacion.config.ts` — metadata estática por entidad (nombre, descripción, campos obligatorios/opcionales, regla de duplicados, nota adicional) — agregar una entidad nueva es agregar un item aquí, nunca una pantalla nueva.
+- `entidad-card.ts` — construye la tarjeta de una entidad: nombre, descripción y 4 acciones (Descargar plantilla, Ver instrucciones, Importar archivo, Historial).
+- `import-wizard-modal.ts` — el flujo obligatorio de importación (seleccionar archivo → analizar → vista previa → confirmar → resultado), un único `Modal` cuyo contenido se reemplaza por paso (nunca anida un segundo Modal).
+- `historial-modal.ts` — historial de una entidad: lista paginada (reutiliza `ResourceTable`) con "Ver detalle" por fila, que reemplaza el contenido del mismo Modal por el detalle (desglose de filas + redescarga del reporte de errores) — mismo patrón de "un Modal, contenido reemplazado por paso" que el wizard.
+- `instrucciones-modal.ts` — instrucciones de una entidad (formatos válidos, campos obligatorios/opcionales, encabezados, duplicados, cómo corregir errores) — contenido estático por entidad, nunca generado por el backend.
+
+### Servicio y tipos nuevos
+
+- **`src/types/importacion.ts`**: espejo exacto de `Backend/src/modules/importaciones` (revisado directamente en los DTOs) — `EntidadImportacion`, `FormatoImportacion` (subconjunto distinto al de exportación, Fase 18: solo xlsx/json/xml, sin pdf/csv), `ResultadoFilaImportacion`, `ResultadoImportacion`, `ImportacionHistorialItem`/`Detalle`.
+- **`src/services/importaciones.service.ts`**: primer servicio del proyecto que sube un archivo — `analizar`/`confirmar` arman un `FormData` (campo `archivo`) y lo envían por `httpClient.post`. `descargarPlantilla`/`descargarReporteErrores` reutilizan `responseType: 'blob'` + `filenameFromContentDisposition` (Fase 18) tal cual — cero lógica nueva de descarga.
+
+### Componentes reutilizados (ninguno nuevo salvo los propios de este módulo)
+
+`Card`, `Modal`, `Button`, `Dropdown` (para "Descargar plantilla", mismo patrón Button+Dropdown que `ExportButton` de la Fase 18, con los 3 formatos de importación), `DataTable`, `ResourceTable`, `RowActions`, `StatCard` (resumen "encontrados/importados/duplicados/errores", igual que el patrón ya usado en Reportes), `Badge`, `Loader`, `PageHeader`, `infoAlert`.
+
+### Patrón nuevo: Modal de varios pasos con contenido reemplazable
+
+Ni `Modal` ni `FormModal` (patrón de referencia hasta ahora, Fase 4) están pensados para un flujo de varios pasos — `FormModal` es de un único paso (formulario → guardar). El wizard de importación y el historial con detalle introducen el patrón: un único `Modal`, con un `stepContainer`/`footerContainer` que se reemplazan (`replaceChildren`) en cada paso, en vez de crear o anidar un Modal nuevo por paso. Documentado como regla permanente en `CLAUDE.md` (nueva sección) para que cualquier flujo de varios pasos futuro lo reutilice.
+
+### Menú y ruta
+
+`Importaciones` agregado al Sidebar de Admin (después de "Reporte de Productividad", antes de "Mi Perfil") y registrado en `main.ts` (`/admin/importaciones`). Solo panel Admin — Motorizado no tiene acceso a importaciones masivas (no estaba en el alcance de esta fase, y el Sidebar de Rider no lo incluye).
+
+### Responsive y Dark Mode
+
+Verificado por lectura de código: la grilla de tarjetas (`grid-cols-1 lg:grid-cols-2 xl:grid-cols-3`) sigue el mismo patrón ya usado por los KPIs de Reportes/Dashboard; todos los componentes reutilizados (`Card`, `Modal`, `Button`, `Dropdown`, `DataTable`, `ResourceTable`, `StatCard`, `Badge`) ya estaban verificados en ambos temas y en los 3 breakpoints desde fases anteriores — ningún color ni clase nueva se introdujo fuera de los tokens semánticos ya establecidos.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint "src/**/*.ts"`, `npx prettier --write` (4 archivos reformateados, sin cambio funcional), `npm run build` — los cuatro sin errores.
+- Servidor de desarrollo (Vite) verificado activo, sirviendo la SPA y transformando el módulo nuevo sin errores.
+- Backend probado extensivamente end-to-end (15+ escenarios: 3 entidades × 3 formatos, duplicados, idempotencia, importación parcial, historial, reporte de errores, casos límite) — ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 17 para el detalle completo, incluidos 2 bugs reales encontrados y corregidos durante esas pruebas.
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — el flujo completo (seleccionar archivo → analizar → vista previa → confirmar → resultado, apertura/cierre de los 3 modales, descarga real de archivos desde el navegador) no se ejecutó de forma interactiva por mí; la verificación se hizo por lectura exhaustiva del código (mismos componentes/patrones ya verificados visualmente en fases anteriores) y por pruebas funcionales directas contra el backend real (curl + multipart) que confirman que cada endpoint responde exactamente lo que el frontend espera.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante en el frontend. Los 2 bugs reales encontrados durante esta fase (usuarioId inexistente dejando filas sin historial; usuario eliminado lógicamente abortando el archivo completo) eran del backend y se corrigieron ahí — ver el detalle en `Backend/DEVELOPMENT_PROGRESS.md` Fase 17.

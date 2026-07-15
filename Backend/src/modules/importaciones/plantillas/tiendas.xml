@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<importacion>
+  <registros>
+    <registro>
+      <nombre>Importaciones Impacto</nombre>
+      <ruc>20123456789</ruc>
+    </registro>
+    <registro>
+      <nombre>Tienda F8</nombre>
+      <ruc/>
+    </registro>
+  </registros>
+</importacion>

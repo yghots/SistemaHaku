@@ -50,6 +50,8 @@ export class PerfilesMotorizadosService {
       );
     }
 
+    await this.validarPlacaDisponible(dto.placa);
+
     try {
       const perfil = await this.perfilesMotorizadosRepository.crear({
         usuarioId,
@@ -58,13 +60,26 @@ export class PerfilesMotorizadosService {
       });
       return PerfilesMotorizadosMapper.toResponseDto(perfil);
     } catch (error) {
-      if (isUniqueConstraintViolation(error)) {
-        throw new ConflictException(
-          'Ya existe un perfil de motorizado para este usuario',
-        );
-      }
-      throw error;
+      this.manejarErrorDeDuplicado(error);
     }
+  }
+
+  /**
+   * Deteccion de duplicados reutilizada por el Centro de Importaciones
+   * (Fase 19) — nunca inventa una regla nueva: es la misma verificacion que
+   * `crear`/`actualizar` ya hacen antes de escribir.
+   */
+  async existePlacaDuplicada(placa: string): Promise<boolean> {
+    const existente =
+      await this.perfilesMotorizadosRepository.buscarPorPlaca(placa);
+    return existente !== null;
+  }
+
+  /** Misma verificacion que `crear` ya hace antes de escribir — expuesta para el chequeo de duplicados del Centro de Importaciones (Fase 19). */
+  async existePerfilParaUsuario(usuarioId: bigint): Promise<boolean> {
+    const existente =
+      await this.perfilesMotorizadosRepository.buscarPorUsuarioId(usuarioId);
+    return existente !== null;
   }
 
   async buscarPorId(id: bigint): Promise<PerfilMotorizadoResponseDto> {
@@ -96,14 +111,22 @@ export class PerfilesMotorizadosService {
     id: bigint,
     dto: UpdatePerfilMotorizadoDto,
   ): Promise<PerfilMotorizadoResponseDto> {
-    await this.obtenerPerfilOFallar(id);
+    const perfilActual = await this.obtenerPerfilOFallar(id);
 
-    const perfilActualizado =
-      await this.perfilesMotorizadosRepository.actualizar(id, {
-        ...(dto.placa ? { placa: dto.placa } : {}),
-        ...(dto.estado ? { estado: dto.estado } : {}),
-      });
-    return PerfilesMotorizadosMapper.toResponseDto(perfilActualizado);
+    if (dto.placa && dto.placa !== perfilActual.placa) {
+      await this.validarPlacaDisponible(dto.placa);
+    }
+
+    try {
+      const perfilActualizado =
+        await this.perfilesMotorizadosRepository.actualizar(id, {
+          ...(dto.placa ? { placa: dto.placa } : {}),
+          ...(dto.estado ? { estado: dto.estado } : {}),
+        });
+      return PerfilesMotorizadosMapper.toResponseDto(perfilActualizado);
+    } catch (error) {
+      this.manejarErrorDeDuplicado(error);
+    }
   }
 
   async eliminar(id: bigint): Promise<PerfilMotorizadoResponseDto> {
@@ -127,5 +150,20 @@ export class PerfilesMotorizadosService {
   ): Promise<PerfilMotorizadoConUsuario> {
     const perfil = await this.perfilesMotorizadosRepository.buscarPorId(id);
     return assertFound(perfil, 'Perfil de motorizado no encontrado');
+  }
+
+  private async validarPlacaDisponible(placa: string): Promise<void> {
+    if (await this.existePlacaDuplicada(placa)) {
+      throw new ConflictException('La placa ya esta en uso');
+    }
+  }
+
+  private manejarErrorDeDuplicado(error: unknown): never {
+    if (isUniqueConstraintViolation(error)) {
+      throw new ConflictException(
+        'Ya existe un perfil de motorizado para este usuario, o la placa ya esta en uso',
+      );
+    }
+    throw error;
   }
 }

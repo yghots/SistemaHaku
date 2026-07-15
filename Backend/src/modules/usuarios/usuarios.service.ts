@@ -121,6 +121,18 @@ export class UsuariosService {
     return this.usuariosRepository.buscarPorUsuarioOCorreo(identificador);
   }
 
+  /**
+   * Resuelve un nombre de usuario a su cuenta (o `null` si no existe) — usado
+   * por el Centro de Importaciones (Fase 19) para vincular una fila de
+   * Motorizados a una cuenta ya existente (nunca crea una cuenta nueva desde
+   * el import: `PerfilesMotorizadosService.crear` ya exige un `usuarioId`
+   * existente, y esa regla no se reinventa aqui).
+   */
+  async buscarPorUsuario(usuario: string): Promise<UsuarioResponseDto | null> {
+    const entidad = await this.usuariosRepository.buscarPorUsuario(usuario);
+    return entidad ? UsuariosMapper.toResponseDto(entidad) : null;
+  }
+
   private async obtenerUsuarioOFallar(id: bigint): Promise<Usuario> {
     const usuario = await this.usuariosRepository.buscarPorId(id);
     return assertFound(usuario, 'Usuario no encontrado');

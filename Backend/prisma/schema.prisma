@@ -58,6 +58,35 @@ enum TipoIncidente {
   otro
 }
 
+// Fase 19 (Centro de Importaciones): entidades que soportan importacion
+// masiva. Infraestructura preparada para futuras entidades — agregar un
+// valor aqui cuando se sume una nueva.
+enum EntidadImportacion {
+  cliente
+  tienda
+  motorizado
+}
+
+enum FormatoImportacion {
+  xlsx
+  json
+  xml
+}
+
+// 'completado' = 100% de las filas importadas sin duplicados ni errores;
+// 'parcial' = el resto (incluye el caso de 0 filas importadas). El
+// historial solo se persiste una vez el archivo se proceso por completo
+// (nunca en un estado intermedio) — ver ImportacionesService.
+enum EstadoImportacion {
+  completado
+  parcial
+}
+
+enum EstadoFilaImportacion {
+  duplicado
+  invalido
+}
+
 // ---------------------------------------------------------------------------
 // Modelos
 // ---------------------------------------------------------------------------
@@ -76,6 +105,7 @@ model Usuario {
   perfilMotorizado PerfilMotorizado?
   pedidosCreados   Pedido[]          @relation("PedidosCreadosPorUsuario")
   eventosHistorial HistorialPedido[] @relation("EventosRegistradosPorUsuario")
+  importaciones    ImportacionHistorial[]
 
   @@map("usuarios")
 }
@@ -113,7 +143,11 @@ model Cliente {
   nombreCompleto     String    @map("nombre_completo") @db.VarChar(150)
   telefono           String    @db.VarChar(20)
   direccion          String    @db.VarChar(255)
-  documentoIdentidad String?   @map("documento_identidad") @db.VarChar(20)
+  // @unique (Fase 19): MySQL permite multiples NULL en un indice unico, asi
+  // que el campo sigue siendo opcional sin restriccion para quien no lo
+  // provee — necesario para que la importacion masiva de Clientes pueda
+  // detectar duplicados por este campo (ver DEVELOPMENT_PROGRESS.md Fase 17).
+  documentoIdentidad String?   @unique @map("documento_identidad") @db.VarChar(20)
   deletedAt          DateTime? @map("deleted_at")
 
   pedidos Pedido[]
@@ -124,7 +158,10 @@ model Cliente {
 model PerfilMotorizado {
   id        BigInt           @id @default(autoincrement())
   usuarioId BigInt           @unique @map("usuario_id")
-  placa     String           @db.VarChar(15)
+  // @unique (Fase 19): necesario para que la importacion masiva de
+  // Motorizados pueda detectar placas duplicadas (ver DEVELOPMENT_PROGRESS.md
+  // Fase 17).
+  placa     String           @unique @db.VarChar(15)
   estado    EstadoMotorizado @default(disponible)
 
   usuario          Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
@@ -211,4 +248,46 @@ model Incidente {
 
   @@index([motorizadoId, resuelto])
   @@map("incidentes")
+}
+
+// Fase 19 (Centro de Importaciones): un registro por archivo procesado
+// hasta el final (exito total o parcial) — nunca en un estado intermedio.
+model ImportacionHistorial {
+  id                    BigInt             @id @default(autoincrement())
+  entidad               EntidadImportacion
+  archivoNombre         String             @map("archivo_nombre") @db.VarChar(255)
+  formato               FormatoImportacion
+  usuarioId             BigInt             @map("usuario_id")
+  totalEncontrados       Int                @map("total_encontrados")
+  importados            Int
+  duplicados            Int
+  errores               Int
+  tiempoProcesamientoMs Int                @map("tiempo_procesamiento_ms")
+  estado                EstadoImportacion
+  creadoEn              DateTime           @default(now()) @map("creado_en")
+
+  usuario  Usuario              @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  detalles ImportacionDetalle[]
+
+  @@index([entidad, creadoEn])
+  @@map("importacion_historial")
+}
+
+// Solo filas que NO se importaron (duplicado/invalido) — las importadas se
+// cuentan en ImportacionHistorial.importados, sin necesidad de una fila por
+// registro exitoso. Es la misma fuente para el detalle del historial y para
+// regenerar el reporte de errores en xlsx (reutiliza common/exports).
+model ImportacionDetalle {
+  id          BigInt                @id @default(autoincrement())
+  historialId BigInt                @map("historial_id")
+  fila        Int
+  estado      EstadoFilaImportacion
+  motivo      String                @db.VarChar(255)
+  campo       String?               @db.VarChar(100)
+  valor       String?               @db.VarChar(255)
+
+  historial ImportacionHistorial @relation(fields: [historialId], references: [id], onDelete: Cascade)
+
+  @@index([historialId])
+  @@map("importacion_detalle")
 }

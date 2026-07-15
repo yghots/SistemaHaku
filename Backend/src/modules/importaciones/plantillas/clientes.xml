@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<importacion>
+  <registros>
+    <registro>
+      <nombreCompleto>Juan Perez Garcia</nombreCompleto>
+      <telefono>987654321</telefono>
+      <direccion>Av. Los Pinos 123, San Isidro</direccion>
+      <documentoIdentidad>45678912</documentoIdentidad>
+    </registro>
+    <registro>
+      <nombreCompleto>Maria Lopez Torres</nombreCompleto>
+      <telefono>912345678</telefono>
+      <direccion>Jr. Las Flores 456, Miraflores</direccion>
+      <documentoIdentidad/>
+    </registro>
+  </registros>
+</importacion>

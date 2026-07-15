@@ -26,7 +26,8 @@ src/
     filters/               HttpExceptionFilter (formato de error uniforme)
     interceptors/          LoggingInterceptor (log de metodo/ruta/status/duracion)
     utils/                 assert-found.util.ts, prisma-error.util.ts (Fase 11), fetch-all-pages.util.ts (Fase 18)
-    exports/               Infraestructura de exportacion de reportes (Fase 18, ver seccion 8)
+    exports/               Infraestructura de exportacion de reportes (Fase 18, ver seccion 7)
+    imports/               Infraestructura de importacion masiva (Fase 19, ver seccion 8)
   prisma/
     prisma.module.ts       Modulo global que expone PrismaService
     prisma.service.ts      Extiende PrismaClient, inyecta el adapter de MySQL, maneja conexion
@@ -163,7 +164,29 @@ interface IExportador {
 - **CORS `exposedHeaders`**: `main.ts` expone `Content-Disposition` (`app.enableCors({ ..., exposedHeaders: ['Content-Disposition'] })`) — sin esto, el navegador oculta ese header a JavaScript aunque viaje en la respuesta, y el frontend no podría nombrar el archivo descargado con el nombre que decide el backend.
 - **Sin cambios de esquema, de autenticación ni de reglas de negocio**: esta fase es puramente infraestructura de presentación de datos ya existentes; `generadoPor` sigue el mismo patrón sin-JWT que `creadoPorId`/`usuarioId` (sección 6).
 
-## 8. Manejo de errores
+## 8. Infraestructura de importación masiva (Fase 19)
+
+Capa agnóstica de entidad, bajo `common/imports/` — mismo espíritu que `common/exports/` (§7), pero para el sentido inverso (leer un archivo, no generarlo):
+
+```typescript
+type FormatoImportacion = 'xlsx' | 'json' | 'xml';
+type FilaCruda = Record<string, string>; // toda fila, sin importar el formato de origen, se normaliza a texto plano
+
+interface ILectorImportacion {
+  leer(buffer: Buffer): FilaCruda[] | Promise<FilaCruda[]>;
+}
+```
+
+- **Un lector por formato** (`XlsxImportReader`, `JsonImportReader`, `XmlImportReader`, en `common/imports/readers/`), los 3 implementan `ILectorImportacion` y reducen el archivo a `FilaCruda[]` sin conocer ninguna entidad. `ImportReaderService` es el único punto de despacho según `FormatoImportacion`. Reutiliza `exceljs`/`xmlbuilder2` (ya presentes desde la Fase 18) también para *leer* — cero librerías nuevas.
+- **`modules/importaciones/importadores/`**: un importador por entidad (`ClientesImportador`, `TiendasImportador`, `MotorizadosImportador`), todos `IEntidadImportador` con un único método `procesarFila(fila, dryRun)`. Valida reutilizando el `Create*Dto` real de la entidad vía `class-validator` (misma lógica que el `ValidationPipe` global, nunca reglas nuevas ni distintas por formato), detecta duplicados reutilizando métodos de solo lectura expuestos por el servicio de la entidad (`existeDocumentoDuplicado`, `existeDuplicado`, `existePlacaDuplicada`/`existePerfilParaUsuario`), y solo si `dryRun` es `false` efectivamente escribe — así "analizar" (vista previa) y "confirmar" comparten el 100% de la validación/detección de duplicados sin duplicar esa lógica en dos lugares.
+- **`ImportacionesService.procesarArchivo`** recorre las filas **secuencialmente** (nunca en paralelo — transaccional por registro, no por archivo) y envuelve cada llamada a `procesarFila` en una red de seguridad (`procesarFilaSinFallar`): cualquier excepción inesperada de una fila individual se reclasifica como esa fila inválida en vez de abortar el archivo completo — ver el caso real encontrado en pruebas (`DEVELOPMENT_PROGRESS.md`, Fase 17: un usuario eliminado lógicamente pasaba el chequeo de duplicado pero era rechazado al escribir).
+- **Historial solo se persiste al confirmar**, nunca al analizar — `ImportacionHistorial` + `ImportacionDetalle` (Prisma, Fase 19). El `usuarioId` de quien confirma se valida **antes** de procesar cualquier fila, para nunca dejar filas escritas sin su registro de auditoría correspondiente.
+- **Reporte de errores**: nunca se guarda un archivo — se regenera bajo demanda (incluida una redescarga posterior) a partir de `ImportacionDetalle` ya persistido, delegando en `ExportService` (§7) exactamente igual que cualquier otro reporte.
+- **Plantillas oficiales**: 9 archivos estáticos (`modules/importaciones/plantillas/`), nunca generados en tiempo de request. `nest-cli.json` declara `compilerOptions.assets` para copiarlos a `dist/` en cada build — sin esto, `nest build` (basado en `tsc`) no copia archivos no-TypeScript.
+- **La importación de Motorizados nunca crea una cuenta de Usuario**: reutiliza `PerfilesMotorizadosService.crear`, que ya exige un `usuarioId` de una cuenta existente — la columna `usuario` del archivo se resuelve a esa cuenta (`UsuariosService.buscarPorUsuario`, nuevo, solo lectura), nunca se acepta un password en el archivo. Evita manejar contraseñas en texto plano y evita el riesgo de una cuenta huérfana si la creación del perfil fallara después de crear la cuenta.
+- **Constraints únicos agregados para permitir idempotencia real** (`Cliente.documentoIdentidad`, `PerfilMotorizado.placa`, ambos `@unique`, Fase 19): antes de esta fase ninguno de los dos tenía una regla de unicidad real (ni en BD ni en servicio) — se agregaron con aprobación explícita del cliente (única forma de garantizar que reimportar el mismo archivo, incluso concurrentemente, nunca duplique un registro).
+
+## 9. Manejo de errores
 
 Filtro global (`HttpExceptionFilter`) intercepta toda excepción y devuelve un formato uniforme:
 
@@ -183,6 +206,6 @@ Filtro global (`HttpExceptionFilter`) intercepta toda excepción y devuelve un f
 - `409`: conflicto de unicidad (nombre/correo/usuario duplicado), conflicto de estado (transición de `Pedido` no permitida, incluida la condición de carrera detectada dentro de la transacción — ver sección 6) o violación de llave foránea al eliminar.
 - Errores no controlados (500): se loguea el stack trace del lado del servidor únicamente; la respuesta al cliente nunca incluye detalles internos — **este comportamiento estaba roto y se corrigió en la auditoría** (ver `AUDIT_REPORT.md`, hallazgo C2): antes de la corrección, `HttpExceptionFilter` devolvía `exception.message` para cualquier error que fuera una instancia de `Error` (es decir, prácticamente cualquier excepción no lanzada explícitamente por nuestro propio código, incluidos los errores de Prisma), filtrando texto interno al cliente. Ahora, para cualquier excepción que no sea un `HttpException` propio, el mensaje de respuesta es siempre el genérico `'Error interno del servidor'`, sin excepción — el detalle real solo se loguea del lado del servidor (`Logger.error`, con el `stack` completo). Los mensajes de los `HttpException` conocidos (400/401/403/404/409/422, todos lanzados deliberadamente por el propio código) no cambiaron.
 
-## 9. Configuración
+## 10. Configuración
 
 `ConfigModule` global carga `configuration.ts` (defaults) y valida con `env.validation.ts` (class-validator sobre las variables de entorno) al arrancar — si la configuración es inválida, la aplicación no levanta. Variables: `NODE_ENV`, `PORT`, `API_PREFIX`, `API_VERSION`, `CORS_ORIGIN`, `DATABASE_URL`.

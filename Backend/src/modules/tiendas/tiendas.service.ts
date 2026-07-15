@@ -118,6 +118,26 @@ export class TiendasService {
     }
   }
 
+  /**
+   * Deteccion de duplicados reutilizada por el Centro de Importaciones
+   * (Fase 19) — nunca inventa una regla nueva: son las mismas dos
+   * verificaciones que `crear`/`actualizar` ya hacen antes de escribir.
+   * Devuelve cual de los dos campos coincidio, para reportarlo en el
+   * detalle de la fila.
+   */
+  async existeDuplicado(
+    nombre: string,
+    ruc?: string,
+  ): Promise<{ campo: 'nombre' | 'ruc'; valor: string } | null> {
+    if (await this.tiendasRepository.buscarPorNombre(nombre)) {
+      return { campo: 'nombre', valor: nombre };
+    }
+    if (ruc && (await this.tiendasRepository.buscarPorRuc(ruc))) {
+      return { campo: 'ruc', valor: ruc };
+    }
+    return null;
+  }
+
   private manejarErrorDeDuplicado(error: unknown): never {
     if (isUniqueConstraintViolation(error)) {
       throw new ConflictException(
