@@ -14,13 +14,14 @@ import { HttpError } from '../../../services/http/http-error';
 import { TiendasService } from '../../../services/tiendas.service';
 import type { Tienda } from '../../../types/tienda';
 import { el } from '../../../utils/dom';
+import { formatOptional } from '../../../utils/format-optional';
 import { buildTiendaForm } from './tienda-form';
 
 /** Pagina de Tiendas: reutiliza integramente la infraestructura CRUD de la Fase 4 (ver usuarios.page.ts). */
 export function TiendasPage(): HTMLElement {
   const columns: DataTableColumn<Tienda>[] = [
     { key: 'nombre', header: 'Nombre' },
-    { key: 'ruc', header: 'RUC', render: (row) => row.ruc ?? '—' },
+    { key: 'ruc', header: 'RUC', render: (row) => formatOptional(row.ruc) },
     {
       key: 'activo',
       header: 'Estado',
@@ -76,7 +77,7 @@ export function TiendasPage(): HTMLElement {
         fields: [
           { label: 'ID', value: tienda.id },
           { label: 'Nombre', value: tienda.nombre },
-          { label: 'RUC', value: tienda.ruc ?? '—' },
+          { label: 'RUC', value: formatOptional(tienda.ruc) },
           { label: 'Estado', value: tienda.activo ? 'Activo' : 'Inactivo' },
         ],
       }),

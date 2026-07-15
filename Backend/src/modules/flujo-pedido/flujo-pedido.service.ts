@@ -1,7 +1,6 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { EstadoPedido } from '@prisma/client';
 import { PedidoResponseDto } from '../pedidos/dto/pedido-response.dto';
-import { PedidosMapper } from '../pedidos/pedidos.mapper';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { PerfilMotorizadoResponseDto } from '../perfiles-motorizados/dto/perfil-motorizado-response.dto';
 import { PerfilesMotorizadosService } from '../perfiles-motorizados/perfiles-motorizados.service';
@@ -48,7 +47,7 @@ export class FlujoPedidoService {
       usuarioId: BigInt(motorizado.usuarioId),
       urlImagen: dto.urlImagen,
     });
-    return PedidosMapper.toResponseDto(actualizado);
+    return this.pedidosService.buscarPorId(actualizado.id);
   }
 
   async iniciarRuta(
@@ -67,7 +66,7 @@ export class FlujoPedidoService {
       pedidoId,
       usuarioId: BigInt(motorizado.usuarioId),
     });
-    return PedidosMapper.toResponseDto(actualizado);
+    return this.pedidosService.buscarPorId(actualizado.id);
   }
 
   async confirmarEntrega(
@@ -92,7 +91,7 @@ export class FlujoPedidoService {
         esPrincipal: foto.esPrincipal,
       })),
     });
-    return PedidosMapper.toResponseDto(actualizado);
+    return this.pedidosService.buscarPorId(actualizado.id);
   }
 
   async asignarMotorizado(
@@ -116,7 +115,7 @@ export class FlujoPedidoService {
       motorizadoId: BigInt(motorizado.id),
       usuarioId: BigInt(dto.usuarioId),
     });
-    return PedidosMapper.toResponseDto(actualizado);
+    return this.pedidosService.buscarPorId(actualizado.id);
   }
 
   async reasignarMotorizado(
@@ -145,7 +144,7 @@ export class FlujoPedidoService {
       motorizadoNuevoId: BigInt(motorizadoNuevo.id),
       usuarioId: BigInt(dto.usuarioId),
     });
-    return PedidosMapper.toResponseDto(actualizado);
+    return this.pedidosService.buscarPorId(actualizado.id);
   }
 
   async registrarClienteAusente(
@@ -169,7 +168,7 @@ export class FlujoPedidoService {
         pedidoId,
         usuarioId: BigInt(motorizado.usuarioId),
       });
-    return PedidosMapper.toResponseDto(actualizado);
+    return this.pedidosService.buscarPorId(actualizado.id);
   }
 
   async registrarRechazo(
@@ -188,7 +187,7 @@ export class FlujoPedidoService {
       pedidoId,
       usuarioId: BigInt(motorizado.usuarioId),
     });
-    return PedidosMapper.toResponseDto(actualizado);
+    return this.pedidosService.buscarPorId(actualizado.id);
   }
 
   async cancelarPedido(
@@ -208,7 +207,7 @@ export class FlujoPedidoService {
       pedidoId,
       usuarioId: BigInt(dto.usuarioId),
     });
-    return PedidosMapper.toResponseDto(actualizado);
+    return this.pedidosService.buscarPorId(actualizado.id);
   }
 
   private verificarMotorizadoAsignado(

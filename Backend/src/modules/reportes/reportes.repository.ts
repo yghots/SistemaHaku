@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { EstadoPedido, Prisma } from '@prisma/client';
+import { EstadoPedido, MetodoPago, Prisma } from '@prisma/client';
+import { calcularEstadoPagoPedido } from '../../common/utils/estado-pago-pedido.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   IReportesRepository,
@@ -17,6 +18,8 @@ const REPORTE_PEDIDO_SELECT = {
   creadoEn: true,
   clienteId: true,
   motorizadoActualId: true,
+  valorProducto: true,
+  costoEnvio: true,
   sucursal: {
     select: {
       id: true,
@@ -30,7 +33,17 @@ type PedidoConSucursalYTienda = Prisma.PedidoGetPayload<{
   select: typeof REPORTE_PEDIDO_SELECT;
 }>;
 
-function mapearFilaPedido(pedido: PedidoConSucursalYTienda): ReportePedidoRow {
+function mapearFilaPedido(
+  pedido: PedidoConSucursalYTienda,
+  resumenPago: { totalPagado: number; metodosUtilizados: MetodoPago[] },
+): ReportePedidoRow {
+  const totalPedido =
+    (Number(pedido.valorProducto) || 0) + (Number(pedido.costoEnvio) || 0);
+  const { totalPagado, saldoPendiente, estadoPago } = calcularEstadoPagoPedido(
+    totalPedido,
+    resumenPago.totalPagado,
+  );
+
   return {
     id: pedido.id,
     codigoPedido: pedido.codigoPedido,
@@ -42,6 +55,10 @@ function mapearFilaPedido(pedido: PedidoConSucursalYTienda): ReportePedidoRow {
     tiendaNombre: pedido.sucursal.tienda.nombre,
     clienteId: pedido.clienteId,
     motorizadoActualId: pedido.motorizadoActualId,
+    totalPagado,
+    saldoPendiente,
+    estadoPago,
+    metodosUtilizados: resumenPago.metodosUtilizados,
   };
 }
 
@@ -86,7 +103,7 @@ export class ReportesRepository implements IReportesRepository {
       this.prisma.pedido.count({ where }),
     ]);
 
-    return { data: rows.map(mapearFilaPedido), total };
+    return { data: await this.enriquecerConPagos(rows), total };
   }
 
   async reporteEntregas(
@@ -118,7 +135,52 @@ export class ReportesRepository implements IReportesRepository {
       this.prisma.pedido.count({ where }),
     ]);
 
-    return { data: rows.map(mapearFilaPedido), total };
+    return { data: await this.enriquecerConPagos(rows), total };
+  }
+
+  /**
+   * Enriquece las filas de Pedido con datos derivados de pagos (Fase 21)
+   * usando una unica consulta agregada para toda la pagina, sin importar
+   * su tamaño (mismo patron que `reporteMotorizados`, no un query por
+   * fila). Compartida por `reportePedidos` y `reporteEntregas` — ambos
+   * reportes muestran un subconjunto distinto de estos mismos campos.
+   */
+  private async enriquecerConPagos(
+    pedidos: PedidoConSucursalYTienda[],
+  ): Promise<ReportePedidoRow[]> {
+    if (pedidos.length === 0) return [];
+
+    const pedidoIds = pedidos.map((pedido) => pedido.id);
+    const grupos = await this.prisma.pago.groupBy({
+      by: ['pedidoId', 'metodoPago'],
+      where: { pedidoId: { in: pedidoIds } },
+      _sum: { monto: true },
+    });
+
+    const resumenPorPedido = new Map<
+      string,
+      { totalPagado: number; metodosUtilizados: MetodoPago[] }
+    >();
+    for (const grupo of grupos) {
+      const clave = grupo.pedidoId.toString();
+      const actual = resumenPorPedido.get(clave) ?? {
+        totalPagado: 0,
+        metodosUtilizados: [],
+      };
+      actual.totalPagado += grupo._sum.monto?.toNumber() ?? 0;
+      actual.metodosUtilizados.push(grupo.metodoPago);
+      resumenPorPedido.set(clave, actual);
+    }
+
+    return pedidos.map((pedido) =>
+      mapearFilaPedido(
+        pedido,
+        resumenPorPedido.get(pedido.id.toString()) ?? {
+          totalPagado: 0,
+          metodosUtilizados: [],
+        },
+      ),
+    );
   }
 
   async reporteMotorizados(

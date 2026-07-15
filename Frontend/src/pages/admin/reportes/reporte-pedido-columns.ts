@@ -1,8 +1,15 @@
 import dayjs from 'dayjs';
 import { Badge } from '../../../components/badge/badge';
 import type { DataTableColumn } from '../../../components/datatable/datatable';
+import {
+  ESTADO_PAGO_PEDIDO_BADGE_VARIANT,
+  ESTADO_PAGO_PEDIDO_LABEL,
+} from '../../../constants/estado-pago-pedido';
 import { ESTADO_PEDIDO_BADGE_VARIANT, ESTADO_PEDIDO_LABEL } from '../../../constants/estado-pedido';
 import type { ReportePedidoItem } from '../../../types/reporte';
+import { formatMonto } from '../../../utils/format-monto';
+import { SIN_VALOR_LABEL } from '../../../utils/format-optional';
+import { METODO_PAGO_LABEL } from '../pedidos/pedido-pago-form';
 
 export interface ReportePedidoLabels {
   clienteLabel: (clienteId: string) => string;
@@ -27,7 +34,8 @@ export function buildReportePedidoColumns({
     {
       key: 'motorizadoActualId',
       header: 'Motorizado',
-      render: (row) => (row.motorizadoActualId ? motorizadoLabel(row.motorizadoActualId) : '—'),
+      render: (row) =>
+        row.motorizadoActualId ? motorizadoLabel(row.motorizadoActualId) : SIN_VALOR_LABEL,
     },
     {
       key: 'estado',
@@ -43,5 +51,46 @@ export function buildReportePedidoColumns({
       header: 'Creado',
       render: (row) => dayjs(row.creadoEn).format('DD/MM/YYYY HH:mm'),
     },
+  ];
+}
+
+/** Columna compartida por ambos reportes (Fase 21): metodos de pago usados en el pedido, sin duplicados. */
+function metodosUtilizadosColumn(): DataTableColumn<ReportePedidoItem> {
+  return {
+    key: 'metodosUtilizados',
+    header: 'Metodos utilizados',
+    render: (row) =>
+      row.metodosUtilizados.length > 0
+        ? row.metodosUtilizados.map((metodo) => METODO_PAGO_LABEL[metodo]).join(', ')
+        : SIN_VALOR_LABEL,
+  };
+}
+
+/** Columnas adicionales del Reporte de Pedidos (Fase 21): Total pagado, Saldo pendiente y Metodos utilizados — siempre valores ya calculados por el backend. */
+export function buildReportePedidosPagoColumns(): DataTableColumn<ReportePedidoItem>[] {
+  return [
+    { key: 'totalPagado', header: 'Total pagado', render: (row) => formatMonto(row.totalPagado) },
+    {
+      key: 'saldoPendiente',
+      header: 'Saldo pendiente',
+      render: (row) => formatMonto(row.saldoPendiente),
+    },
+    metodosUtilizadosColumn(),
+  ];
+}
+
+/** Columnas adicionales del Reporte de Entregas (Fase 21): Estado de pago y Metodos utilizados. */
+export function buildReporteEntregasPagoColumns(): DataTableColumn<ReportePedidoItem>[] {
+  return [
+    {
+      key: 'estadoPago',
+      header: 'Estado de pago',
+      render: (row) =>
+        Badge({
+          label: ESTADO_PAGO_PEDIDO_LABEL[row.estadoPago],
+          variant: ESTADO_PAGO_PEDIDO_BADGE_VARIANT[row.estadoPago],
+        }),
+    },
+    metodosUtilizadosColumn(),
   ];
 }

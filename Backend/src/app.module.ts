@@ -11,6 +11,7 @@ import { FotosEntregaModule } from './modules/fotos-entrega/fotos-entrega.module
 import { HistorialPedidoModule } from './modules/historial-pedido/historial-pedido.module';
 import { ImportacionesModule } from './modules/importaciones/importaciones.module';
 import { IncidentesModule } from './modules/incidentes/incidentes.module';
+import { PagosModule } from './modules/pagos/pagos.module';
 import { PedidosModule } from './modules/pedidos/pedidos.module';
 import { PerfilesMotorizadosModule } from './modules/perfiles-motorizados/perfiles-motorizados.module';
 import { ReportesModule } from './modules/reportes/reportes.module';
@@ -40,6 +41,7 @@ import { PrismaModule } from './prisma/prisma.module';
     IncidentesModule,
     ReportesModule,
     ImportacionesModule,
+    PagosModule,
   ],
   controllers: [AppController],
   providers: [AppService],

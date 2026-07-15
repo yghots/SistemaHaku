@@ -28,6 +28,7 @@ import type {
 import type { ReportePedidoItem } from '../../../types/reporte';
 import { cn } from '../../../utils/cn';
 import { el } from '../../../utils/dom';
+import { formatOptional } from '../../../utils/format-optional';
 
 interface KpiConfig {
   key: keyof RiderDashboardKpis;
@@ -207,7 +208,7 @@ function buildProximoPedido(proximoPedido: RiderProximoPedido | null): HTMLEleme
           el(
             'span',
             { className: 'text-sm text-text-primary' },
-            proximoPedido.telefonoContacto ?? '—',
+            formatOptional(proximoPedido.telefonoContacto),
           ),
         ),
       ),

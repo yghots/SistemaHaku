@@ -29,7 +29,30 @@ const COLUMNAS_REPORTE_PEDIDOS: ExportColumna[] = [
   { clave: 'motorizadoActualId', encabezado: 'Motorizado (id)' },
   { clave: 'estado', encabezado: 'Estado' },
   { clave: 'creadoEn', encabezado: 'Creado' },
+  { clave: 'totalPagado', encabezado: 'Total pagado' },
+  { clave: 'saldoPendiente', encabezado: 'Saldo pendiente' },
+  { clave: 'metodosUtilizados', encabezado: 'Métodos utilizados' },
 ];
+
+// Reporte de Entregas (Fase 21) muestra estado de pago en vez del monto
+// pagado/saldo (mismos datos subyacentes, distinto recorte por reporte).
+const COLUMNAS_REPORTE_ENTREGAS: ExportColumna[] = [
+  { clave: 'codigoPedido', encabezado: 'Código' },
+  { clave: 'tiendaNombre', encabezado: 'Tienda' },
+  { clave: 'sucursalNombre', encabezado: 'Sucursal' },
+  { clave: 'clienteId', encabezado: 'Cliente (id)' },
+  { clave: 'motorizadoActualId', encabezado: 'Motorizado (id)' },
+  { clave: 'estado', encabezado: 'Estado' },
+  { clave: 'creadoEn', encabezado: 'Creado' },
+  { clave: 'estadoPago', encabezado: 'Estado de pago' },
+  { clave: 'metodosUtilizados', encabezado: 'Métodos utilizados' },
+];
+
+const ESTADO_PAGO_LABEL: Record<string, string> = {
+  sin_pago: 'Sin pago',
+  pago_parcial: 'Pago parcial',
+  pagado: 'Pagado',
+};
 
 const COLUMNAS_REPORTE_MOTORIZADOS: ExportColumna[] = [
   { clave: 'nombres', encabezado: 'Nombres' },
@@ -42,7 +65,7 @@ const COLUMNAS_REPORTE_MOTORIZADOS: ExportColumna[] = [
   { clave: 'productividad', encabezado: 'Productividad (%)' },
 ];
 
-/** Convierte un `ReportePedidoItemDto` ya mapeado a la fila plana que consume la infraestructura de exportacion — la misma forma para Reporte de Pedidos y Reporte de Entregas (comparten DTO). */
+/** Convierte un `ReportePedidoItemDto` ya mapeado a la fila plana que consume la infraestructura de exportacion — la misma forma base para Reporte de Pedidos y Reporte de Entregas (comparten DTO); cada exportacion solo referencia el subconjunto de claves que le corresponde via `COLUMNAS_REPORTE_PEDIDOS`/`COLUMNAS_REPORTE_ENTREGAS`. */
 function filaDesdePedido(item: ReportePedidoItemDto): Record<string, string> {
   return {
     codigoPedido: item.codigoPedido,
@@ -52,6 +75,10 @@ function filaDesdePedido(item: ReportePedidoItemDto): Record<string, string> {
     motorizadoActualId: item.motorizadoActualId ?? '—',
     estado: item.estado,
     creadoEn: item.creadoEn.toLocaleString('es'),
+    totalPagado: item.totalPagado,
+    saldoPendiente: item.saldoPendiente,
+    estadoPago: ESTADO_PAGO_LABEL[item.estadoPago] ?? item.estadoPago,
+    metodosUtilizados: item.metodosUtilizados.join(', ') || '—',
   };
 }
 
@@ -209,7 +236,7 @@ export class ReportesService {
 
     return this.exportService.exportar(query.formato, {
       titulo: 'Reporte de Entregas',
-      columnas: COLUMNAS_REPORTE_PEDIDOS,
+      columnas: COLUMNAS_REPORTE_ENTREGAS,
       filas: ReportesMapper.toPedidoItemDtoList(filas).map(filaDesdePedido),
       filtros: filtrosAplicados(query, []),
       generadoPor: query.generadoPor,

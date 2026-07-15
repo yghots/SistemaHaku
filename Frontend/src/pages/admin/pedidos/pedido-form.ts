@@ -39,6 +39,10 @@ export interface PedidoFormHandle {
  * cacheando por tienda para no repetir la misma consulta (ver
  * `utils/dependent-options.ts`). En modo edicion, Cliente y Sucursal son
  * inmutables (igual que en el backend) y se muestran de solo lectura.
+ *
+ * Sin seccion de Pagos (Fase 20.1): el Administrador ya no registra pagos
+ * al crear un pedido — el cobro ocurre en el momento de la entrega, en el
+ * flujo del Motorizado (`pages/rider/mis-pedidos/confirmar-entrega-form.ts`).
  */
 export function buildPedidoForm({ mode, initial }: PedidoFormMode): PedidoFormHandle {
   let clientesById = new Map<string, Cliente>();

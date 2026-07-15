@@ -1,4 +1,5 @@
-import { EstadoMotorizado, EstadoPedido } from '@prisma/client';
+import { EstadoMotorizado, EstadoPedido, MetodoPago } from '@prisma/client';
+import type { EstadoPagoPedido } from '../../../common/types/estado-pago-pedido.type';
 
 export const REPORTES_REPOSITORY = Symbol('REPORTES_REPOSITORY');
 
@@ -22,6 +23,16 @@ export interface ReportePedidoRow {
   tiendaNombre: string;
   clienteId: bigint;
   motorizadoActualId: bigint | null;
+  // Derivados de pagos (Fase 21) — nunca almacenados, calculados a partir
+  // de la tabla `pago` con la misma consulta agregada que usa Pedidos
+  // (ver `common/utils/estado-pago-pedido.util.ts`). Reporte de Pedidos
+  // usa totalPagado/saldoPendiente/metodosUtilizados; Reporte de Entregas
+  // usa estadoPago/metodosUtilizados — ambos reportes comparten esta
+  // misma fila enriquecida una sola vez.
+  totalPagado: number;
+  saldoPendiente: number;
+  estadoPago: EstadoPagoPedido;
+  metodosUtilizados: MetodoPago[];
 }
 
 export interface ReportePedidosParams {

@@ -2,6 +2,10 @@ import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { Pedido } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 import { assertFound } from '../../common/utils/assert-found.util';
+import {
+  calcularEstadoPagoPedido,
+  ResumenPagoPedidoCalculado,
+} from '../../common/utils/estado-pago-pedido.util';
 import { isForeignKeyViolation } from '../../common/utils/prisma-error.util';
 import { ClientesService } from '../clientes/clientes.service';
 import { SucursalesService } from '../sucursales/sucursales.service';
@@ -42,12 +46,18 @@ export class PedidosService {
       costoEnvio: dto.costoEnvio,
       observaciones: dto.observaciones,
     });
-    return PedidosMapper.toResponseDto(pedido);
+    return PedidosMapper.toResponseDto(
+      pedido,
+      await this.resumenPagoDe(pedido),
+    );
   }
 
   async buscarPorId(id: bigint): Promise<PedidoResponseDto> {
     const pedido = await this.obtenerPedidoOFallar(id);
-    return PedidosMapper.toResponseDto(pedido);
+    return PedidosMapper.toResponseDto(
+      pedido,
+      await this.resumenPagoDe(pedido),
+    );
   }
 
   async listar(
@@ -64,8 +74,12 @@ export class PedidosService {
       fechaHasta: query.fechaHasta,
     });
 
+    // Una sola consulta agregada para toda la pagina (Fase 21) — nunca N+1
+    // sin importar cuantos pedidos tenga la pagina.
+    const resumenPorPedido = await this.resumenPagoDeMuchos(data);
+
     return new PaginatedResponseDto(
-      PedidosMapper.toResponseDtoList(data),
+      PedidosMapper.toResponseDtoList(data, resumenPorPedido),
       total,
       query.page,
       query.limit,
@@ -96,7 +110,10 @@ export class PedidosService {
         ? { observaciones: dto.observaciones }
         : {}),
     });
-    return PedidosMapper.toResponseDto(pedidoActualizado);
+    return PedidosMapper.toResponseDto(
+      pedidoActualizado,
+      await this.resumenPagoDe(pedidoActualizado),
+    );
   }
 
   async eliminar(id: bigint): Promise<PedidoResponseDto> {
@@ -104,11 +121,16 @@ export class PedidosService {
 
     try {
       const pedido = await this.pedidosRepository.eliminar(id);
-      return PedidosMapper.toResponseDto(pedido);
+      // Un pedido con pagos nunca llega aqui (el FK de Pago.pedidoId es
+      // Restrict): si `eliminar` tuvo exito, su resumen es siempre "sin_pago".
+      return PedidosMapper.toResponseDto(
+        pedido,
+        await this.resumenPagoDe(pedido),
+      );
     } catch (error) {
       if (isForeignKeyViolation(error)) {
         throw new ConflictException(
-          'No se puede eliminar el pedido: tiene registros asociados (historial, fotos o incidentes)',
+          'No se puede eliminar el pedido: tiene registros asociados (historial, fotos, incidentes o pagos)',
         );
       }
       throw error;
@@ -118,5 +140,41 @@ export class PedidosService {
   private async obtenerPedidoOFallar(id: bigint): Promise<Pedido> {
     const pedido = await this.pedidosRepository.buscarPorId(id);
     return assertFound(pedido, 'Pedido no encontrado');
+  }
+
+  /**
+   * Estado de pago + saldo pendiente de un unico pedido (Fase 21) —
+   * reutiliza la misma consulta agregada que `resumenPagoDeMuchos` con un
+   * arreglo de un solo id, para no duplicar la logica de calculo.
+   */
+  private async resumenPagoDe(
+    pedido: Pedido,
+  ): Promise<ResumenPagoPedidoCalculado> {
+    const resumen = await this.resumenPagoDeMuchos([pedido]);
+    return resumen.get(pedido.id.toString())!;
+  }
+
+  private async resumenPagoDeMuchos(
+    pedidos: Pedido[],
+  ): Promise<Map<string, ResumenPagoPedidoCalculado>> {
+    if (pedidos.length === 0) return new Map();
+
+    const montosPorPedido =
+      await this.pedidosRepository.sumarMontoPagadoPorPedidos(
+        pedidos.map((pedido) => pedido.id),
+      );
+
+    return new Map(
+      pedidos.map((pedido) => {
+        const totalPedido =
+          (Number(pedido.valorProducto) || 0) +
+          (Number(pedido.costoEnvio) || 0);
+        const totalPagado = montosPorPedido.get(pedido.id.toString()) ?? 0;
+        return [
+          pedido.id.toString(),
+          calcularEstadoPagoPedido(totalPedido, totalPagado),
+        ];
+      }),
+    );
   }
 }

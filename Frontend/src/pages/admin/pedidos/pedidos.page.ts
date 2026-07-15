@@ -17,6 +17,10 @@ import {
 import { Section } from '../../../components/section/section';
 import { Select, type SelectOption } from '../../../components/select/select';
 import { showSuccessToast } from '../../../components/toast/toast';
+import {
+  ESTADO_PAGO_PEDIDO_BADGE_VARIANT,
+  ESTADO_PAGO_PEDIDO_LABEL,
+} from '../../../constants/estado-pago-pedido';
 import { ESTADO_PEDIDO_BADGE_VARIANT, ESTADO_PEDIDO_LABEL } from '../../../constants/estado-pedido';
 import { ClientesService } from '../../../services/clientes.service';
 import { HttpError } from '../../../services/http/http-error';
@@ -25,21 +29,22 @@ import { PedidosService } from '../../../services/pedidos.service';
 import { SessionService } from '../../../services/session.service';
 import { SucursalesService } from '../../../services/sucursales.service';
 import { TiendasService } from '../../../services/tiendas.service';
+import { UsuariosService } from '../../../services/usuarios.service';
 import { ESTADOS_CANCELABLES, type EstadoPedido, type Pedido } from '../../../types/pedido';
 import { el } from '../../../utils/dom';
+import { formatMonto } from '../../../utils/format-monto';
+import { formatOptional, SIN_VALOR_LABEL } from '../../../utils/format-optional';
 import { formatMotorizado } from '../../../utils/format-motorizado';
+import { nombreCompleto } from '../../../utils/nombre-completo';
 import { toSelectOptions } from '../../../utils/select-options';
 import { buildPedidoForm } from './pedido-form';
 import { PedidoFotos } from './pedido-fotos';
 import { PedidoHistorial } from './pedido-historial';
+import { PedidoPagos } from './pedido-pagos';
 
 const ESTADO_OPTIONS: SelectOption[] = Object.entries(ESTADO_PEDIDO_LABEL).map(
   ([value, label]) => ({ value, label }),
 );
-
-function formatMonto(value: string | null): string {
-  return value ? `$${value}` : '—';
-}
 
 /**
  * Pagina de Pedidos: reutiliza la misma infraestructura CRUD que los demas
@@ -54,6 +59,7 @@ export function PedidosPage(): HTMLElement {
   let sucursalOptions: SelectOption[] = [];
   let motorizadoLabelById = new Map<string, string>();
   let motorizadoOptions: SelectOption[] = [];
+  let usuarioLabelById = new Map<string, string>();
   let table: ResourceTableHandle | undefined;
 
   const newButton = Button({
@@ -85,11 +91,12 @@ export function PedidosPage(): HTMLElement {
 
   async function init(): Promise<void> {
     try {
-      const [clientes, tiendas, sucursales, motorizados] = await Promise.all([
+      const [clientes, tiendas, sucursales, motorizados, usuarios] = await Promise.all([
         ClientesService.listar({ page: 1, limit: 100 }),
         TiendasService.listar({ page: 1, limit: 100 }),
         SucursalesService.listar({ page: 1, limit: 100 }),
         MotorizadosService.listar({ page: 1, limit: 100 }),
+        UsuariosService.listar({ page: 1, limit: 100 }),
       ]);
 
       clienteLabelById = new Map(
@@ -116,6 +123,9 @@ export function PedidosPage(): HTMLElement {
         motorizados.data,
         (motorizado) => motorizado.id,
         (motorizado) => motorizadoLabelById.get(motorizado.id) ?? formatMotorizado(motorizado),
+      );
+      usuarioLabelById = new Map(
+        usuarios.data.map((usuario) => [usuario.id, nombreCompleto(usuario)]),
       );
 
       newButton.disabled = false;
@@ -144,6 +154,10 @@ export function PedidosPage(): HTMLElement {
     return motorizadoLabelById.get(motorizadoId) ?? motorizadoId;
   }
 
+  function usuarioLabel(usuarioId: string): string {
+    return usuarioLabelById.get(usuarioId) ?? usuarioId;
+  }
+
   function buildTable(): void {
     const columns: DataTableColumn<Pedido>[] = [
       { key: 'codigoPedido', header: 'Codigo' },
@@ -162,6 +176,20 @@ export function PedidosPage(): HTMLElement {
         key: 'creadoEn',
         header: 'Creado',
         render: (row) => dayjs(row.creadoEn).format('DD/MM/YYYY HH:mm'),
+      },
+      {
+        key: 'estadoPago',
+        header: 'Pago',
+        render: (row) =>
+          Badge({
+            label: ESTADO_PAGO_PEDIDO_LABEL[row.estadoPago],
+            variant: ESTADO_PAGO_PEDIDO_BADGE_VARIANT[row.estadoPago],
+          }),
+      },
+      {
+        key: 'saldoPendiente',
+        header: 'Saldo',
+        render: (row) => formatMonto(row.saldoPendiente),
       },
       {
         key: 'id',
@@ -249,6 +277,11 @@ export function PedidosPage(): HTMLElement {
       { className: 'flex justify-center py-6' },
       Loader({ label: 'Cargando fotos' }),
     );
+    const pagosSlot = el(
+      'div',
+      { className: 'flex justify-center py-6' },
+      Loader({ label: 'Cargando pagos' }),
+    );
 
     const content = el(
       'div',
@@ -260,20 +293,31 @@ export function PedidosPage(): HTMLElement {
           { label: 'Sucursal', value: sucursalLabel(pedido.sucursalId) },
           {
             label: 'Motorizado asignado',
-            value: pedido.motorizadoActualId ? motorizadoLabel(pedido.motorizadoActualId) : '—',
+            value: pedido.motorizadoActualId
+              ? motorizadoLabel(pedido.motorizadoActualId)
+              : SIN_VALOR_LABEL,
           },
           { label: 'Direccion de entrega', value: pedido.direccionEntrega },
-          { label: 'Telefono de contacto', value: pedido.telefonoContacto ?? '—' },
-          { label: 'Descripcion del producto', value: pedido.descripcionProducto ?? '—' },
+          { label: 'Telefono de contacto', value: formatOptional(pedido.telefonoContacto) },
+          {
+            label: 'Descripcion del producto',
+            value: formatOptional(pedido.descripcionProducto),
+          },
           { label: 'Valor del producto', value: formatMonto(pedido.valorProducto) },
           { label: 'Costo de envio', value: formatMonto(pedido.costoEnvio) },
           { label: 'Estado', value: ESTADO_PEDIDO_LABEL[pedido.estado] },
-          { label: 'Observaciones', value: pedido.observaciones ?? '—' },
+          { label: 'Observaciones', value: formatOptional(pedido.observaciones) },
           { label: 'Creado', value: dayjs(pedido.creadoEn).format('DD/MM/YYYY HH:mm') },
         ],
       }),
       Section({ title: 'Historial', children: [historialSlot] }),
       Section({ title: 'Fotos', children: [fotosSlot] }),
+      Section({
+        title: 'Pagos',
+        description:
+          'El cobro al cliente se registra durante la entrega, en el panel del Motorizado.',
+        children: [pagosSlot],
+      }),
     );
 
     const modal = Modal({
@@ -284,6 +328,19 @@ export function PedidosPage(): HTMLElement {
       onClose: () => modal.destroy(),
     });
     modal.open();
+
+    async function loadPagos(): Promise<void> {
+      try {
+        const [resumen, pagos] = await Promise.all([
+          PedidosService.obtenerResumenPagos(pedido.id),
+          PedidosService.obtenerPagos(pedido.id, { page: 1, limit: 50 }),
+        ]);
+        pagosSlot.replaceChildren(PedidoPagos(resumen, pagos.data, usuarioLabel));
+      } catch (error) {
+        await showApiError(error);
+      }
+    }
+    void loadPagos();
 
     try {
       const [historial, fotos] = await Promise.all([

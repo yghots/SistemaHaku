@@ -78,4 +78,23 @@ export class PedidosRepository implements IPedidosRepository {
   eliminar(id: bigint): Promise<Pedido> {
     return this.prisma.pedido.delete({ where: { id } });
   }
+
+  async sumarMontoPagadoPorPedidos(
+    pedidoIds: bigint[],
+  ): Promise<Map<string, number>> {
+    if (pedidoIds.length === 0) return new Map();
+
+    const grupos = await this.prisma.pago.groupBy({
+      by: ['pedidoId'],
+      where: { pedidoId: { in: pedidoIds } },
+      _sum: { monto: true },
+    });
+
+    return new Map(
+      grupos.map((grupo) => [
+        grupo.pedidoId.toString(),
+        grupo._sum.monto?.toNumber() ?? 0,
+      ]),
+    );
+  }
 }

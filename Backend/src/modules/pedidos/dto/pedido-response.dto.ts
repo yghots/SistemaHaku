@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EstadoPedido } from '@prisma/client';
+import type { EstadoPagoPedido } from '../../../common/types/estado-pago-pedido.type';
 
 export class PedidoResponseDto {
   @ApiProperty({ description: 'Identificador unico del pedido' })
@@ -52,6 +53,19 @@ export class PedidoResponseDto {
 
   @ApiProperty({ description: 'Fecha y hora de creacion del pedido' })
   creadoEn: Date;
+
+  @ApiProperty({
+    description:
+      'Estado de pago calculado a partir de los pagos registrados (Fase 21, modulo Pagos) — nunca almacenado',
+    enum: ['sin_pago', 'pago_parcial', 'pagado'],
+  })
+  estadoPago: EstadoPagoPedido;
+
+  @ApiProperty({
+    description:
+      'Saldo pendiente de pago, calculado a partir de los pagos registrados (Fase 21)',
+  })
+  saldoPendiente: string;
 
   constructor(partial: PedidoResponseDto) {
     Object.assign(this, partial);

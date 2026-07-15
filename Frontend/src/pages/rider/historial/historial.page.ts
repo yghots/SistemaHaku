@@ -32,6 +32,8 @@ import type { PaginatedResponse } from '../../../types/api';
 import type { Pedido } from '../../../types/pedido';
 import { el } from '../../../utils/dom';
 import { fetchAllPages } from '../../../utils/fetch-all-pages';
+import { formatMonto } from '../../../utils/format-monto';
+import { formatOptional } from '../../../utils/format-optional';
 import { formatMotorizado } from '../../../utils/format-motorizado';
 import { PedidoFotos } from '../../admin/pedidos/pedido-fotos';
 import { PedidoHistorial } from '../../admin/pedidos/pedido-historial';
@@ -40,10 +42,6 @@ const ESTADO_OPTIONS: SelectOption[] = ESTADOS_TERMINALES.map((value) => ({
   value,
   label: ESTADO_PEDIDO_LABEL[value],
 }));
-
-function formatMonto(value: string | null): string {
-  return value ? `$${value}` : '—';
-}
 
 /**
  * Historial del Motorizado: pedidos ya cerrados (estados terminales) que
@@ -242,12 +240,15 @@ export function HistorialPage(): HTMLElement {
           { label: 'Cliente', value: clienteLabel(pedido.clienteId) },
           { label: 'Sucursal', value: sucursalLabel(pedido.sucursalId) },
           { label: 'Direccion de entrega', value: pedido.direccionEntrega },
-          { label: 'Telefono de contacto', value: pedido.telefonoContacto ?? '—' },
-          { label: 'Descripcion del producto', value: pedido.descripcionProducto ?? '—' },
+          { label: 'Telefono de contacto', value: formatOptional(pedido.telefonoContacto) },
+          {
+            label: 'Descripcion del producto',
+            value: formatOptional(pedido.descripcionProducto),
+          },
           { label: 'Valor del producto', value: formatMonto(pedido.valorProducto) },
           { label: 'Costo de envio', value: formatMonto(pedido.costoEnvio) },
           { label: 'Estado', value: ESTADO_PEDIDO_LABEL[pedido.estado] },
-          { label: 'Observaciones', value: pedido.observaciones ?? '—' },
+          { label: 'Observaciones', value: formatOptional(pedido.observaciones) },
           { label: 'Creado', value: dayjs(pedido.creadoEn).format('DD/MM/YYYY HH:mm') },
         ],
       }),

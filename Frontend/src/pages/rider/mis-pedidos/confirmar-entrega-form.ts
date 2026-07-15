@@ -2,20 +2,42 @@ import { Plus, Trash2 } from 'lucide';
 import { Checkbox } from '../../../components/checkbox/checkbox';
 import { IconButton } from '../../../components/button/icon-button';
 import { Button } from '../../../components/button/button';
+import { DataTable, type DataTableColumn } from '../../../components/datatable/datatable';
+import { DetailList } from '../../../components/detail-list/detail-list';
 import { Input } from '../../../components/input/input';
+import { Loader } from '../../../components/loader/loader';
+import { Section } from '../../../components/section/section';
 import { Textarea } from '../../../components/textarea/textarea';
-import type { FotoEntregaInput } from '../../../types/pedido';
+import type { ResumenPagoPedido } from '../../../types/pago';
+import type { FotoEntregaInput, Pedido } from '../../../types/pedido';
 import { cn } from '../../../utils/cn';
 import { el } from '../../../utils/dom';
+import { formatMonto } from '../../../utils/format-monto';
+import { formatOptional } from '../../../utils/format-optional';
+import {
+  buildPagoForm,
+  METODO_PAGO_LABEL,
+  type PagoFormValues,
+} from '../../admin/pedidos/pedido-pago-form';
 
 export interface ConfirmarEntregaFormValues {
   fotos: FotoEntregaInput[];
   observaciones?: string;
 }
 
+export interface TempPago extends PagoFormValues {
+  tempId: number;
+}
+
 export interface ConfirmarEntregaFormHandle {
   element: HTMLElement;
   validate: () => ConfirmarEntregaFormValues | null;
+  /** Reemplaza el placeholder de carga por el resumen economico ya calculado por el backend (Fase 20.1) — nunca recalculado aqui. */
+  setResumen: (resumen: ResumenPagoPedido) => void;
+  /** Snapshot de los pagos agregados en memoria que todavia no se registraron contra el backend. */
+  getPagosPendientes: () => TempPago[];
+  /** Quita un pago de la lista pendiente apenas se registra con exito, para que un reintento nunca lo vuelva a enviar duplicado. */
+  marcarPagoRegistrado: (tempId: number) => void;
 }
 
 interface FotoRow {
@@ -25,12 +47,24 @@ interface FotoRow {
 }
 
 /**
- * Formulario de "Confirmar entrega" (CU10): el backend exige al menos una
- * URL de foto (no acepta archivos, solo URLs ya almacenadas — ver
- * ConfirmarEntregaDto/FotoEntregaInputDto). Permite agregar/quitar filas
- * de foto dinamicamente porque el backend acepta un arreglo de 1 o mas.
+ * Formulario de "Confirmar entrega" (CU10, corregido en la Fase 20.1): el
+ * cobro al cliente ocurre en el momento de la entrega, asi que el registro
+ * de pagos se movio aqui desde el panel Administrador (que ya no registra
+ * pagos, solo consulta). Orden del formulario: Fotos → Observacion →
+ * Resumen economico → Pagos → Confirmar entrega (el boton de envio vive en
+ * el FormModal que envuelve este formulario, en `mis-pedidos.page.ts`).
+ *
+ * Los pagos se arman en memoria (mismo patron de "sub-recurso antes de que
+ * el padre exista" documentado en `CLAUDE.md` §27) y se registran uno por
+ * uno contra el endpoint ya existente, reutilizando `buildPagoForm()` tal
+ * cual (Fase 20) — nunca un formulario nuevo. La pagina (no este archivo)
+ * es quien llama a `PedidosService.registrarPago`/`confirmarEntrega`; este
+ * formulario solo expone `getPagosPendientes`/`marcarPagoRegistrado` para
+ * que la pagina pueda ir vaciando la lista a medida que cada pago se
+ * confirma, sin volver a enviar un pago ya registrado si algo falla a
+ * mitad de camino.
  */
-export function buildConfirmarEntregaForm(): ConfirmarEntregaFormHandle {
+export function buildConfirmarEntregaForm(pedido: Pedido): ConfirmarEntregaFormHandle {
   const rows: FotoRow[] = [];
   const rowsContainer = el('div', { className: 'flex flex-col gap-3' });
 
@@ -100,18 +134,111 @@ export function buildConfirmarEntregaForm(): ConfirmarEntregaFormHandle {
     helpText: 'Opcional',
   });
 
+  // Resumen economico (Fase 20.1): placeholder mientras la pagina consulta
+  // `PedidosService.obtenerResumenPagos` — el modal se abre de inmediato,
+  // sin esperar esta consulta (mismo patron que "Ver detalle").
+  const resumenSlot = el(
+    'div',
+    { className: 'flex justify-center py-4' },
+    Loader({ label: 'Cargando resumen' }),
+  );
+
+  function setResumen(resumen: ResumenPagoPedido): void {
+    resumenSlot.replaceChildren(
+      DetailList({
+        fields: [
+          { label: 'Valor del producto', value: formatMonto(pedido.valorProducto) },
+          { label: 'Costo de envio', value: formatMonto(pedido.costoEnvio) },
+          { label: 'Total del pedido', value: formatMonto(resumen.totalPedido) },
+          { label: 'Total pagado', value: formatMonto(resumen.totalPagado) },
+          { label: 'Saldo pendiente', value: formatMonto(resumen.saldoPendiente) },
+        ],
+      }),
+    );
+  }
+
+  // Pagos (Fase 20.1): se arman en memoria y se registran secuencialmente
+  // desde `mis-pedidos.page.ts` al confirmar la entrega — nunca desde aqui
+  // (los formularios no llaman servicios de mutacion, solo la pagina).
+  let tempPagos: TempPago[] = [];
+  let nextTempId = 1;
+  let pagoForm = buildPagoForm();
+
+  const pagoFormContainer = el('div', { className: 'flex flex-col gap-4' }, pagoForm.element);
+  const pagosTableSlot = el('div', {});
+
+  function resetPagoForm(): void {
+    pagoForm = buildPagoForm();
+    pagoFormContainer.replaceChildren(pagoForm.element);
+  }
+
+  function renderPagosTable(): void {
+    const columns: DataTableColumn<TempPago>[] = [
+      { key: 'metodoPago', header: 'Metodo', render: (row) => METODO_PAGO_LABEL[row.metodoPago] },
+      { key: 'monto', header: 'Monto', render: (row) => formatMonto(row.monto) },
+      {
+        key: 'observacion',
+        header: 'Observacion',
+        render: (row) => formatOptional(row.observacion),
+      },
+      {
+        key: 'tempId',
+        header: '',
+        className: 'text-right',
+        render: (row) =>
+          IconButton({
+            icon: Trash2,
+            label: 'Quitar pago',
+            variant: 'ghost',
+            size: 'sm',
+            onClick: () => {
+              tempPagos = tempPagos.filter((pago) => pago.tempId !== row.tempId);
+              renderPagosTable();
+            },
+          }),
+      },
+    ];
+
+    pagosTableSlot.replaceChildren(
+      DataTable({
+        columns,
+        rows: tempPagos,
+        getRowKey: (row) => row.tempId.toString(),
+        emptyTitle: 'Sin pagos agregados',
+        emptyDescription: 'Registra el cobro al cliente antes de confirmar la entrega (opcional).',
+      }),
+    );
+  }
+  renderPagosTable();
+
+  const addPagoButton = Button({
+    label: 'Agregar pago',
+    icon: Plus,
+    variant: 'outline',
+    size: 'sm',
+    onClick: () => {
+      const values = pagoForm.validate();
+      if (!values) return;
+      tempPagos = [...tempPagos, { ...values, tempId: nextTempId++ }];
+      resetPagoForm();
+      renderPagosTable();
+    },
+  });
+
   const element = el(
     'div',
-    { className: 'flex flex-col gap-4' },
-    el(
-      'div',
-      { className: 'flex flex-col gap-2' },
-      el('span', { className: 'text-sm font-medium text-text-primary' }, 'Fotos de entrega'),
-      rowsContainer,
-      addButton,
-      fotosErrorText,
-    ),
-    observacionesField.wrapper,
+    { className: 'flex flex-col gap-6' },
+    Section({
+      title: 'Fotos',
+      children: [rowsContainer, addButton, fotosErrorText],
+    }),
+    Section({ title: 'Observacion', children: [observacionesField.wrapper] }),
+    Section({ title: 'Resumen economico', children: [resumenSlot] }),
+    Section({
+      title: 'Pagos',
+      description: 'Opcional: registra el cobro al cliente en el momento de la entrega.',
+      children: [pagoFormContainer, addPagoButton, pagosTableSlot],
+    }),
   );
 
   function validate(): ConfirmarEntregaFormValues | null {
@@ -140,5 +267,14 @@ export function buildConfirmarEntregaForm(): ConfirmarEntregaFormHandle {
     return { fotos, observaciones: observaciones || undefined };
   }
 
-  return { element, validate };
+  function getPagosPendientes(): TempPago[] {
+    return [...tempPagos];
+  }
+
+  function marcarPagoRegistrado(tempId: number): void {
+    tempPagos = tempPagos.filter((pago) => pago.tempId !== tempId);
+    renderPagosTable();
+  }
+
+  return { element, validate, setResumen, getPagosPendientes, marcarPagoRegistrado };
 }

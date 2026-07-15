@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { EstadoPedido } from '@prisma/client';
+import { EstadoPedido, MetodoPago } from '@prisma/client';
+import type { EstadoPagoPedido } from '../../../common/types/estado-pago-pedido.type';
 
 export class ReportePedidoItemDto {
   @ApiProperty({ description: 'Identificador unico del pedido' })
@@ -34,6 +35,31 @@ export class ReportePedidoItemDto {
     nullable: true,
   })
   motorizadoActualId: string | null;
+
+  @ApiProperty({
+    description:
+      'Total pagado hasta el momento, calculado a partir de los pagos registrados (Fase 21, modulo Pagos) — nunca almacenado',
+  })
+  totalPagado: string;
+
+  @ApiProperty({
+    description: 'Saldo pendiente de pago (Fase 21)',
+  })
+  saldoPendiente: string;
+
+  @ApiProperty({
+    description: 'Estado de pago del pedido (Fase 21)',
+    enum: ['sin_pago', 'pago_parcial', 'pagado'],
+  })
+  estadoPago: EstadoPagoPedido;
+
+  @ApiProperty({
+    description:
+      'Metodos de pago utilizados en el pedido, sin duplicados (Fase 21)',
+    enum: MetodoPago,
+    isArray: true,
+  })
+  metodosUtilizados: MetodoPago[];
 
   constructor(partial: ReportePedidoItemDto) {
     Object.assign(this, partial);

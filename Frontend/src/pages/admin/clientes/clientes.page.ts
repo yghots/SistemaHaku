@@ -13,6 +13,7 @@ import { ClientesService } from '../../../services/clientes.service';
 import { HttpError } from '../../../services/http/http-error';
 import type { Cliente } from '../../../types/cliente';
 import { el } from '../../../utils/dom';
+import { formatOptional } from '../../../utils/format-optional';
 import { buildClienteForm } from './cliente-form';
 
 /** Pagina de Clientes: reutiliza integramente la infraestructura CRUD de la Fase 4 (ver usuarios.page.ts). */
@@ -24,7 +25,7 @@ export function ClientesPage(): HTMLElement {
     {
       key: 'documentoIdentidad',
       header: 'Documento',
-      render: (row) => row.documentoIdentidad ?? '—',
+      render: (row) => formatOptional(row.documentoIdentidad),
     },
     {
       key: 'id',
@@ -64,7 +65,7 @@ export function ClientesPage(): HTMLElement {
           { label: 'Nombre completo', value: cliente.nombreCompleto },
           { label: 'Telefono', value: cliente.telefono },
           { label: 'Direccion', value: cliente.direccion },
-          { label: 'Documento de identidad', value: cliente.documentoIdentidad ?? '—' },
+          { label: 'Documento de identidad', value: formatOptional(cliente.documentoIdentidad) },
         ],
       }),
       footer: Button({ label: 'Cerrar', variant: 'secondary', onClick: () => modal.close() }),

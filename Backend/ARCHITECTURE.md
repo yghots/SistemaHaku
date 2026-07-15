@@ -34,6 +34,7 @@ src/
   modules/
     usuarios/  auth/  tiendas/  sucursales/  clientes/  perfiles-motorizados/
     pedidos/  historial-pedido/  fotos-entrega/  flujo-pedido/  incidentes/  reportes/
+    importaciones/  pagos/
 ```
 
 Cada módulo de negocio sigue la misma forma interna:
@@ -177,7 +178,7 @@ interface ILectorImportacion {
 }
 ```
 
-- **Un lector por formato** (`XlsxImportReader`, `JsonImportReader`, `XmlImportReader`, en `common/imports/readers/`), los 3 implementan `ILectorImportacion` y reducen el archivo a `FilaCruda[]` sin conocer ninguna entidad. `ImportReaderService` es el único punto de despacho según `FormatoImportacion`. Reutiliza `exceljs`/`xmlbuilder2` (ya presentes desde la Fase 18) también para *leer* — cero librerías nuevas.
+- **Un lector por formato** (`XlsxImportReader`, `JsonImportReader`, `XmlImportReader`, en `common/imports/readers/`), los 3 implementan `ILectorImportacion` y reducen el archivo a `FilaCruda[]` sin conocer ninguna entidad. `ImportReaderService` es el único punto de despacho según `FormatoImportacion`. Reutiliza `exceljs`/`xmlbuilder2` (ya presentes desde la Fase 18) también para _leer_ — cero librerías nuevas.
 - **`modules/importaciones/importadores/`**: un importador por entidad (`ClientesImportador`, `TiendasImportador`, `MotorizadosImportador`), todos `IEntidadImportador` con un único método `procesarFila(fila, dryRun)`. Valida reutilizando el `Create*Dto` real de la entidad vía `class-validator` (misma lógica que el `ValidationPipe` global, nunca reglas nuevas ni distintas por formato), detecta duplicados reutilizando métodos de solo lectura expuestos por el servicio de la entidad (`existeDocumentoDuplicado`, `existeDuplicado`, `existePlacaDuplicada`/`existePerfilParaUsuario`), y solo si `dryRun` es `false` efectivamente escribe — así "analizar" (vista previa) y "confirmar" comparten el 100% de la validación/detección de duplicados sin duplicar esa lógica en dos lugares.
 - **`ImportacionesService.procesarArchivo`** recorre las filas **secuencialmente** (nunca en paralelo — transaccional por registro, no por archivo) y envuelve cada llamada a `procesarFila` en una red de seguridad (`procesarFilaSinFallar`): cualquier excepción inesperada de una fila individual se reclasifica como esa fila inválida en vez de abortar el archivo completo — ver el caso real encontrado en pruebas (`DEVELOPMENT_PROGRESS.md`, Fase 17: un usuario eliminado lógicamente pasaba el chequeo de duplicado pero era rechazado al escribir).
 - **Historial solo se persiste al confirmar**, nunca al analizar — `ImportacionHistorial` + `ImportacionDetalle` (Prisma, Fase 19). El `usuarioId` de quien confirma se valida **antes** de procesar cualquier fila, para nunca dejar filas escritas sin su registro de auditoría correspondiente.
@@ -186,7 +187,18 @@ interface ILectorImportacion {
 - **La importación de Motorizados nunca crea una cuenta de Usuario**: reutiliza `PerfilesMotorizadosService.crear`, que ya exige un `usuarioId` de una cuenta existente — la columna `usuario` del archivo se resuelve a esa cuenta (`UsuariosService.buscarPorUsuario`, nuevo, solo lectura), nunca se acepta un password en el archivo. Evita manejar contraseñas en texto plano y evita el riesgo de una cuenta huérfana si la creación del perfil fallara después de crear la cuenta.
 - **Constraints únicos agregados para permitir idempotencia real** (`Cliente.documentoIdentidad`, `PerfilMotorizado.placa`, ambos `@unique`, Fase 19): antes de esta fase ninguno de los dos tenía una regla de unicidad real (ni en BD ni en servicio) — se agregaron con aprobación explícita del cliente (única forma de garantizar que reimportar el mismo archivo, incluso concurrentemente, nunca duplique un registro).
 
-## 9. Manejo de errores
+## 9. Módulo de Pagos (Fase 20)
+
+Sub-recurso de `Pedido` (`Pedido 1 → N Pago`, cuelga de `/pedidos/:id/pagos` — mismo criterio de la sección 2: "si la URL cuelga de otro recurso, el endpoint vive bajo ese recurso"). Solo registrar + consultar: un pago es un registro histórico inmutable, sin `PATCH`/`DELETE`.
+
+- **Nada calculado se persiste**: total del pedido, total pagado, saldo pendiente y estado de pago (`"pagado"` | `"pendiente"`) se recalculan en cada solicitud a partir de los pagos registrados — nunca hay una columna `pagado`/`total` en la base de datos. Única fuente de esa aritmética: `pagos/pagos-calculo.util.ts` (funciones puras, sin Prisma), reutilizada exclusivamente por `PagosService`.
+- **Total del pedido = `valorProducto + costoEnvio`** (los dos únicos campos monetarios de `Pedido`, ambos opcionales, tratados como 0 si faltan). Total pagado = suma de `monto` de los pagos (nunca `montoRecibido`, que es solo información de manejo de efectivo). Saldo pendiente nunca es negativo.
+- **Reglas de "Efectivo"** (`monto recibido` obligatorio, rechazo si es menor al monto, `vuelto` calculado) viven únicamente en `PagosService`; para el resto de métodos (`yape`/`plin`/`transferencia`/`tarjeta`) `montoRecibido` ni se solicita ni se acepta.
+- **`MetodoPago`** es un enum de Prisma (`efectivo`, `yape`, `plin`, `transferencia`, `tarjeta`) — nunca un string libre; agregar un método nuevo es una migración de bajo riesgo (agregar un valor al enum), sin tocar la estructura del módulo.
+- **Sin sistema de autorización**: "Pedido sin permisos" (mencionado como caso a validar) no tiene implementación — no existe ningún mecanismo de roles/permisos en el proyecto (limitación ya documentada en la sección 6), y esta fase no introduce uno nuevo.
+- **El módulo es agnóstico de quién lo llama** (Fase 20.1, corrección funcional): `POST /pedidos/:id/pagos` no distingue panel Administrador de panel Motorizado — ambos son el mismo `Usuario` autenticado sin JWT (sección 6). La corrección de la Fase 20.1 fue puramente de **orquestación en el frontend** (el registro de pagos se movió del flujo de creación de pedido, en Admin, al flujo de Confirmar Entrega, en el Motorizado, para reflejar el proceso real de cobro contra-entrega) — el endpoint, sus DTOs, sus validaciones y `pagos-calculo.util.ts` no cambiaron ni una línea. Ver `Frontend/FRONTEND_PROGRESS.md`, Fase 20.1, para el detalle del nuevo flujo.
+
+## 10. Manejo de errores
 
 Filtro global (`HttpExceptionFilter`) intercepta toda excepción y devuelve un formato uniforme:
 
@@ -206,6 +218,6 @@ Filtro global (`HttpExceptionFilter`) intercepta toda excepción y devuelve un f
 - `409`: conflicto de unicidad (nombre/correo/usuario duplicado), conflicto de estado (transición de `Pedido` no permitida, incluida la condición de carrera detectada dentro de la transacción — ver sección 6) o violación de llave foránea al eliminar.
 - Errores no controlados (500): se loguea el stack trace del lado del servidor únicamente; la respuesta al cliente nunca incluye detalles internos — **este comportamiento estaba roto y se corrigió en la auditoría** (ver `AUDIT_REPORT.md`, hallazgo C2): antes de la corrección, `HttpExceptionFilter` devolvía `exception.message` para cualquier error que fuera una instancia de `Error` (es decir, prácticamente cualquier excepción no lanzada explícitamente por nuestro propio código, incluidos los errores de Prisma), filtrando texto interno al cliente. Ahora, para cualquier excepción que no sea un `HttpException` propio, el mensaje de respuesta es siempre el genérico `'Error interno del servidor'`, sin excepción — el detalle real solo se loguea del lado del servidor (`Logger.error`, con el `stack` completo). Los mensajes de los `HttpException` conocidos (400/401/403/404/409/422, todos lanzados deliberadamente por el propio código) no cambiaron.
 
-## 10. Configuración
+## 11. Configuración
 
 `ConfigModule` global carga `configuration.ts` (defaults) y valida con `env.validation.ts` (class-validator sobre las variables de entorno) al arrancar — si la configuración es inválida, la aplicación no levanta. Variables: `NODE_ENV`, `PORT`, `API_PREFIX`, `API_VERSION`, `CORS_ORIGIN`, `DATABASE_URL`.

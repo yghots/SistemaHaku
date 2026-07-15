@@ -18,6 +18,10 @@ export class ReportesMapper {
       tiendaNombre: row.tiendaNombre,
       clienteId: row.clienteId.toString(),
       motorizadoActualId: row.motorizadoActualId?.toString() ?? null,
+      totalPagado: row.totalPagado.toFixed(2),
+      saldoPendiente: row.saldoPendiente.toFixed(2),
+      estadoPago: row.estadoPago,
+      metodosUtilizados: row.metodosUtilizados,
     });
   }
 

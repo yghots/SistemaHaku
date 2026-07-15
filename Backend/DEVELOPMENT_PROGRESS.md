@@ -2503,8 +2503,122 @@ La conexión a MySQL fallaba (RSA public key is not available client side) al re
 - prisma/schema.prisma, migración nueva.
 - src/modules/clientes/, src/modules/tiendas/, src/modules/perfiles-motorizados/, src/modules/usuarios/ — extendidos con los métodos de lectura descritos arriba (servicio + repositorio + interfaz donde aplica).
 - src/common/imports/ (nuevo): import.types.ts, stringificar-valor.util.ts, import-reader.service.ts, import.module.ts, readers/{xlsx,json,xml}-import.reader.ts.
-- src/modules/importaciones/ (nuevo): importaciones.controller.ts, .service.ts, .repository.ts, .mapper.ts, .module.ts, .constants.ts, dto/*, importadores/*, interfaces/*, plantillas/* (9 archivos estáticos).
+- src/modules/importaciones/ (nuevo): importaciones.controller.ts, .service.ts, .repository.ts, .mapper.ts, .module.ts, .constants.ts, dto/_, importadores/_, interfaces/_, plantillas/_ (9 archivos estáticos).
 - nest-cli.json (assets), .env/.env.example (allowPublicKeyRetrieval).
 - API_OVERVIEW.md, ARCHITECTURE.md actualizados.
 
 El backend vuelve a quedar en feature freeze al cerrar esta fase.
+
+## Fase 18 — Módulo de Pagos (proyecto Fase 20)
+
+Excepción explícita al feature freeze: módulo nuevo, `pagos`, para registrar uno o varios pagos por pedido (parciales y/o mixtos, cualquier combinación de métodos). No implementa Caja, Arqueo, Conciliación Bancaria ni Flujo de Caja — únicamente el registro histórico de pagos y su resumen calculado, tal como delimita esta fase.
+
+### Modelo Prisma
+
+- Nuevo enum `MetodoPago` (`efectivo`, `yape`, `plin`, `transferencia`, `tarjeta`) — conjunto cerrado, agregar un método nuevo en el futuro es una migración de bajo riesgo (un valor de enum), nunca un string libre.
+- Nuevo modelo `Pago`: `id`, `pedidoId`, `metodoPago`, `monto` (`Decimal(10,2)`), `montoRecibido`/`vuelto` (`Decimal(10,2)?`, solo aplican a `efectivo`), `observacion`, `creadoPorId`, `creadoEn`. Relación `Pedido 1 → N Pago` (`Pedido.pagos Pago[]`, nunca se almacenan pagos dentro de `Pedido`) y `Usuario 1 → N Pago` (`creadoPor`, mismo patrón que `creadoPorId` en `Pedido`/`HistorialPedido`).
+- **Ningún campo derivado se persiste**: total del pedido, total pagado, saldo pendiente y estado de pago nunca se guardan en la base de datos — se calculan en cada solicitud (ver `pagos-calculo.util.ts`).
+- Migración `20260715043707_modulo_pagos`, aplicada limpia.
+- `PedidosService.eliminar`: el mensaje de error ante violación de llave foránea ahora menciona "pagos" junto a "historial, fotos o incidentes" (antes de esta fase esa combinación no incluía pagos porque el modelo no existía) — único cambio de texto en el módulo `pedidos`, sin tocar ninguna regla de negocio ni el flujo operativo.
+
+### Arquitectura (Validaciones / Persistencia / Cálculos separados)
+
+- **`pagos-calculo.util.ts`**: funciones puras (`calcularVuelto`, `calcularResumenPago`) — única fuente de esta aritmética, sin acceso a Prisma ni a ningún servicio. Reutilizada exclusivamente por `PagosService`, nunca duplicada.
+- **`PagosRepository`**: `crear`, `buscarPorPedido` (paginado) y `sumarMontoPorPedido` (agregación Prisma `_sum`, evita traer todas las filas a memoria solo para sumar). Sin métodos de actualización ni eliminación — un pago es un registro histórico inmutable, tal como pide la fase ("No permitir eliminar pagos. No implementar edición de pagos").
+- **`PagosService`**: orquesta validación (reutiliza `PedidosService.buscarPorId`/`UsuariosService.buscarPorId` para "pedido inexistente"/"usuario inexistente", exactamente el mismo patrón que `FotosEntregaService`/`HistorialPedidoService`) + las reglas propias de "Efectivo" (monto recibido obligatorio, rechazo si es menor al monto, vuelto calculado) + delega el resumen en `pagos-calculo.util.ts`.
+- **Total del pedido = `valorProducto + costoEnvio`** (los únicos dos campos monetarios que expone `Pedido`; ambos opcionales, se tratan como 0 si faltan) — asunción explícita, documentada aquí por no estar definida literalmente en la fase, pero es la única lectura posible dado el esquema actual de `Pedido`.
+- **Total pagado = suma de `monto`, nunca de `montoRecibido`**: `montoRecibido` es información de manejo de efectivo (puede incluir vuelto), no lo efectivamente abonado a la deuda del pedido.
+- **Saldo pendiente nunca es negativo** (`Math.max(0, ...)`): un sobrepago (no rechazado por esta fase — no está en la lista de validaciones pedidas) dado dado simplemente deja el pedido "pagado" con saldo 0, sin modelar crédito/excedente (fuera de alcance).
+- **"Pedido sin permisos" (validación listada en la fase) no se implementó**: no existe ningún sistema de autorización/roles en el proyecto (decisión arquitectónica ya documentada, `ARCHITECTURE.md` §6) — no se inventó uno nuevo para esta fase. Queda como limitación ya conocida, no como omisión de esta fase.
+
+### Endpoints agregados
+
+`POST /pedidos/:id/pagos` (registrar), `GET /pedidos/:id/pagos` (listar, paginado), `GET /pedidos/:id/pagos/resumen` (total del pedido, total pagado, saldo pendiente, estado de pago). Sin `PATCH`/`DELETE` — confirmado con pruebas reales (ver abajo).
+
+### Pruebas funcionales realizadas (contra MySQL real, servidor en modo watch)
+
+- Los 5 métodos de pago registrados individualmente (efectivo, yape, plin, transferencia, tarjeta).
+- Pago parcial (2 pagos que no completan el total) → `estadoPago: "pendiente"`, saldo correcto.
+- Pago mixto (4 métodos distintos en el mismo pedido) → suma correcta, saldo correcto.
+- Vuelto: monto=10/recibido=10 → vuelto=0; monto=100/recibido=150 → vuelto=50 — ambos verificados.
+- Validaciones: monto ≤ 0 (400), método inexistente (400), monto recibido menor al monto (400), monto recibido en método distinto de efectivo (400, rechazado), efectivo sin monto recibido (400), pedido inexistente (404), usuario (`creadoPorId`) inexistente (404).
+- Resumen recalculado correctamente tras cada pago; estado pasa a `"pagado"` exactamente cuando `totalPagado >= totalPedido`.
+- Confirmado que `PATCH`/`DELETE` sobre `/pedidos/:id/pagos/:id` no existen (404 de ruta de Express, no hay handler registrado).
+- Regresión: `prisma validate` ✓, `prisma generate` ✓, `tsc --noEmit` ✓, `npm run build` ✓, `npm run lint` (eslint + prettier) ✓, `npm test` (unit) ✓, `npm run test:e2e` ✓.
+
+### Archivos modificados/creados
+
+- `prisma/schema.prisma`, migración nueva.
+- `src/modules/pedidos/pedidos.service.ts` (mensaje de error de `eliminar`, ver arriba).
+- `src/modules/pagos/` (nuevo): `pagos.module.ts`, `.controller.ts`, `.service.ts`, `.repository.ts`, `.mapper.ts`, `pagos-calculo.util.ts`, `dto/{crear-pago,pago-response,resumen-pago-pedido}.dto.ts`, `interfaces/pagos-repository.interface.ts`.
+- `src/app.module.ts`, `src/main.ts` (tag Swagger "Pagos").
+- `API_OVERVIEW.md`, `ARCHITECTURE.md` actualizados.
+
+**El backend vuelve a quedar en feature freeze** al cerrar esta fase.
+
+## Fase 19 — Integración del módulo de Pagos en Pedidos/Reportes (proyecto Fase 21)
+
+Excepción explícita y acotada al feature freeze: **no se reimplementó nada del módulo `pagos`** (entidad, DTOs, endpoints y reglas de negocio de Fase 18/20 intactos, sin un solo cambio). Esta fase únicamente expone datos derivados de los pagos ya existentes a través de los endpoints de **Pedidos** y **Reportes**, para que el frontend pueda integrar la funcionalidad completamente (ver `FRONTEND_PROGRESS.md`, Fase 21).
+
+### Diseño: lectura directa de la tabla `pago`, nunca una dependencia de módulo
+
+- `PedidosModule` y `ReportesModule` no importan `PagosModule` ni inyectan `PagosService`/`PagosRepository` — evita acoplar dos módulos nuevos (y un ciclo de DI real: `PagosModule` ya importa `PedidosModule` para validar que el pedido exista). En su lugar, cada uno consulta la tabla `pago` directamente vía su propio `PrismaService` ya inyectado — el mismo precedente arquitectónico ya documentado en `ARCHITECTURE.md` §9 ("Reportes es deliberadamente independiente, consulta Prisma directamente en vez de los servicios de los módulos dueños").
+- La aritmética (saldo pendiente, estado pagado/pendiente) se reutiliza tal cual desde `modules/pagos/pagos-calculo.util.ts` (`calcularResumenPago`, funciones puras sin DI) vía un import de TypeScript plano — cero duplicación de la fórmula, cero acoplamiento de módulo.
+- Nuevo `common/utils/estado-pago-pedido.util.ts` (`calcularEstadoPagoPedido`) + `common/types/estado-pago-pedido.type.ts` (`EstadoPagoPedido = 'sin_pago' | 'pago_parcial' | 'pagado'`): un estado de 3 valores, más granular que el binario `pagado`/`pendiente` de `ResumenPagoPedidoDto` (Pagos) — una necesidad de visualización en tablas/reportes ("sin ningún pago" vs. "con pago parcial"), no una regla de negocio nueva de Pagos. Se deriva del mismo cálculo: `totalPagado === 0 ? 'sin_pago' : (pagado ? 'pagado' : 'pago_parcial')`.
+
+### `PedidosService`: `estadoPago`/`saldoPendiente` en cada respuesta, sin N+1
+
+- `IPedidosRepository.sumarMontoPagadoPorPedidos(pedidoIds)` (nuevo, de solo lectura): una única consulta `prisma.pago.groupBy({ by: ['pedidoId'], _sum: { monto: true } })` para un arreglo de ids.
+- `PedidosService` gana dos métodos privados: `resumenPagoDe(pedido)` (un pedido, delega en el bulk con arreglo de 1) y `resumenPagoDeMuchos(pedidos)` (usado por `listar`: **una sola consulta agregada para toda la página**, sin importar su tamaño — mismo patrón ya usado por `ReportesRepository.reporteMotorizados` desde la Fase 10).
+- `PedidosMapper.toResponseDto`/`toResponseDtoList` ahora reciben el resumen ya calculado (nunca lo calculan ellos mismos) y lo traducen a los 2 campos nuevos de `PedidoResponseDto`: `estadoPago` (`EstadoPagoPedido`) y `saldoPendiente` (string, `toFixed(2)`).
+- `crear`/`buscarPorId`/`actualizar`/`eliminar`/`listar` — los 5 métodos de `PedidosService` — quedan enriquecidos. `eliminar` en particular: si tuvo éxito, el pedido nunca tenía pagos (el FK de `Pago.pedidoId` es `Restrict`), así que su resumen es siempre `sin_pago`/saldo completo — no se pierde ninguna garantía ya existente.
+- **Ripple effect descubierto y corregido**: cambiar la firma de `PedidosMapper.toResponseDto`/`toResponseDtoList` (ahora exige el resumen) rompía 8 llamadas en `src/modules/flujo-pedido/flujo-pedido.service.ts` que invocaban el mapper directamente con 1 solo argumento (`confirmarRecojo`, `iniciarRuta`, `confirmarEntrega`, `asignarMotorizado`, `reasignarMotorizado`, `registrarClienteAusente`, `registrarRechazo`, `cancelarPedido`). Corregido redirigiendo esas 8 llamadas a `this.pedidosService.buscarPorId(actualizado.id)` (el servicio ya estaba inyectado en `FlujoPedidoService` para otras verificaciones) — reutiliza la lógica de enriquecimiento ya centralizada en `PedidosService`, en vez de duplicarla en un tercer lugar. Encontrado con `grep -rn "PedidosMapper\." src/modules` antes de asumir que el cambio de firma era seguro.
+
+### `ReportesRepository`: mismo patrón, compartido por Pedidos y Entregas
+
+- `REPORTE_PEDIDO_SELECT` gana `valorProducto`/`costoEnvio` (necesarios para el total del pedido).
+- Nuevo método privado `enriquecerConPagos(pedidos)`: una única consulta `prisma.pago.groupBy({ by: ['pedidoId', 'metodoPago'], _sum: { monto: true } })` para toda la página — de la misma agrupación se derivan tanto el total pagado (suma de todos los métodos) como los métodos utilizados (sin duplicados), sin una segunda consulta. Compartido tal cual por `reportePedidos` y `reporteEntregas` — ambos reportes muestran un subconjunto distinto de los mismos campos calculados.
+- `ReportePedidoRow`/`ReportePedidoItemDto` ganan 4 campos: `totalPagado`, `saldoPendiente`, `estadoPago`, `metodosUtilizados` (`MetodoPago[]`). El Reporte de Pedidos usa los 3 primeros más `metodosUtilizados`; el Reporte de Entregas usa `estadoPago` + `metodosUtilizados` — la diferenciación ocurre en las columnas de exportación (ver abajo) y en el frontend, nunca en el cálculo (una sola fuente de datos).
+- **`reporteMotorizados` no se tocó** (instrucción explícita de esta fase: "No modificar Reporte de Productividad").
+
+### Exportaciones: columnas ampliadas, infraestructura intacta
+
+- `COLUMNAS_REPORTE_PEDIDOS` (Reporte de Pedidos): gana `totalPagado`, `saldoPendiente`, `metodosUtilizados`.
+- Nuevo `COLUMNAS_REPORTE_ENTREGAS` (antes, Entregas reutilizaba el arreglo de columnas de Pedidos tal cual): gana `estadoPago`, `metodosUtilizados`, sin las columnas de monto que sí lleva Pedidos — `exportarReporteEntregas` ahora usa este arreglo en vez de `COLUMNAS_REPORTE_PEDIDOS`.
+- `filaDesdePedido` (fila plana para exportar) agrega los 4 campos nuevos, con `estadoPago` traducido a etiqueta legible (`ESTADO_PAGO_LABEL`) y `metodosUtilizados` unido con comas.
+- **La infraestructura de exportación (`ExportService`, los 5 exportadores, `ExportSolicitud`) no se tocó** — solo se ampliaron `columnas`/`filas`, tal como pide la fase ("No modificar la infraestructura de exportación. Solo ampliar el contenido exportado."). Nota de comportamiento preexistente (no introducida por esta fase): el exportador JSON siempre vuelca el objeto `filas` completo, ignorando la lista de `columnas` — a diferencia de Excel/PDF/CSV/XML, que sí respetan la selección de columnas. Verificado explícitamente que ambos reportes exportan columnas distintas en CSV/XLSX/PDF/XML.
+
+### Pruebas funcionales realizadas (contra MySQL real, servidor en modo watch)
+
+- `GET /pedidos` y `GET /pedidos/:id`: verificados los 3 estados (`sin_pago`, `pago_parcial`, `pagado`) sobre pedidos ya existentes con pagos reales de la Fase 20.
+- `GET /reportes/pedidos` y `GET /reportes/entregas`: verificados `totalPagado`/`saldoPendiente`/`estadoPago`/`metodosUtilizados` con datos mixtos (pedido con 4 métodos distintos, pedido pagado con 2 métodos, pedidos sin pagos).
+- Las 5 exportaciones (xlsx/pdf/csv/json/xml) de ambos reportes, verificadas con petición real — confirmado que CSV/XLSX/PDF/XML muestran columnas distintas por reporte (Pedidos: Total pagado/Saldo pendiente/Métodos utilizados; Entregas: Estado de pago/Métodos utilizados) y que las 5 devuelven 200 sin error.
+- Flujo completo simulado a nivel de API (la misma secuencia que ejecuta el frontend al crear un pedido con pagos): crear pedido → registrar 3 pagos mixtos secuenciales (efectivo/yape/tarjeta, parcial → pagado) → verificado saldo/estado correctos en cada paso.
+- Verificado que un pago que falla su propia validación (monto negativo, 400) nunca afecta al pedido ya creado — el pedido permanece intacto y consultable.
+- Regresión: `tsc --noEmit` ✓, `npm run build` ✓, `npm run lint` (eslint + prettier, autofix aplicado) ✓, `npm test` (unit) ✓, `npm run test:e2e` ✓.
+
+### Archivos modificados/creados
+
+- `src/common/types/estado-pago-pedido.type.ts` (nuevo), `src/common/utils/estado-pago-pedido.util.ts` (nuevo).
+- `src/modules/pedidos/`: `interfaces/pedidos-repository.interface.ts`, `pedidos.repository.ts`, `pedidos.service.ts`, `pedidos.mapper.ts`, `dto/pedido-response.dto.ts`.
+- `src/modules/flujo-pedido/flujo-pedido.service.ts` (8 llamadas al mapper redirigidas a `pedidosService.buscarPorId`, import de `PedidosMapper` eliminado).
+- `src/modules/reportes/`: `interfaces/reportes-repository.interface.ts`, `reportes.repository.ts`, `reportes.mapper.ts`, `reportes.service.ts`, `dto/reporte-pedido-item.dto.ts`.
+
+**Ningún endpoint, DTO de entrada, ni regla de negocio del módulo `pagos` cambió.** El backend vuelve a quedar en feature freeze al cerrar esta fase.
+
+## Fase 20.1 — Corrección funcional: el registro de pagos pasa del Administrador al Motorizado
+
+**Cero cambios de código en el backend.** Esta fase corrige un error de modelado detectado en la revisión funcional de la Fase 21: el Administrador registraba pagos al crear un pedido, cuando en la operación real el cobro ocurre recién cuando el Motorizado entrega el pedido al cliente. La corrección es puramente de **orquestación en el frontend** — qué panel llama a `POST /pedidos/:id/pagos` y en qué momento del flujo — porque el endpoint ya era agnóstico de quién lo invoca (no hay JWT ni roles a nivel de request, sección 6 de `ARCHITECTURE.md`).
+
+### Verificación realizada (sin ningún archivo `.ts` modificado)
+
+- `prisma validate`, `tsc --noEmit`, `npm run lint` (eslint + prettier), `npm run build` — todos ✓, confirmando que el backend permanece exactamente como quedó al cierre de la Fase 19.
+- Flujo completo simulado a nivel de API, reproduciendo exactamente la secuencia que ahora ejecuta el panel del Motorizado: crear pedido (Admin, sin pagos) → asignar motorizado → confirmar recojo → iniciar ruta → **registrar pagos mixtos (efectivo con vuelto + yape) → confirmar entrega**. Verificado que:
+  - Un pago que falla su propia validación (`montoRecibido` menor al `monto`, 400) deja el pedido intacto en `en_ruta` — la entrega nunca se confirma parcialmente (comportamiento inherente al endpoint, ya existente desde la Fase 18, ahora aprovechado por el nuevo orden del frontend).
+  - Con los pagos completos (`estadoPago: "pagado"`, saldo 0), `confirmarEntrega` funciona exactamente igual que antes — el DTO no cambió.
+  - `confirmarEntrega` funciona también sin ningún pago registrado (pagos opcionales, no se inventó una regla de "cobro obligatorio" que el DTO no exige).
+  - `GET /pedidos` y `GET /reportes/entregas` reflejan correctamente `estadoPago`/`metodosUtilizados` de los pedidos entregados en la prueba — sin regresión.
+
+### Documentación actualizada
+
+`ARCHITECTURE.md` §9 (nota aclaratoria: el módulo es agnóstico de quién lo llama, la corrección fue de orquestación frontend). Ver `Frontend/FRONTEND_PROGRESS.md`, Fase 20.1, para el detalle completo del nuevo flujo en el panel del Motorizado.

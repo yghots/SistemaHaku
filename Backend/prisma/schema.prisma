@@ -87,6 +87,17 @@ enum EstadoFilaImportacion {
   invalido
 }
 
+// Fase 20 (Modulo de Pagos): conjunto cerrado de metodos de pago
+// soportados — agregar uno nuevo en el futuro es una migracion de bajo
+// riesgo (agregar un valor al enum), nunca un string libre.
+enum MetodoPago {
+  efectivo
+  yape
+  plin
+  transferencia
+  tarjeta
+}
+
 // ---------------------------------------------------------------------------
 // Modelos
 // ---------------------------------------------------------------------------
@@ -106,6 +117,7 @@ model Usuario {
   pedidosCreados   Pedido[]          @relation("PedidosCreadosPorUsuario")
   eventosHistorial HistorialPedido[] @relation("EventosRegistradosPorUsuario")
   importaciones    ImportacionHistorial[]
+  pagosRegistrados Pago[]                 @relation("PagosRegistradosPorUsuario")
 
   @@map("usuarios")
 }
@@ -198,6 +210,7 @@ model Pedido {
   fotos      FotoEntrega[]
   historial  HistorialPedido[]
   incidentes Incidente[]
+  pagos      Pago[]
 
   @@index([estado])
   @@index([creadoEn])
@@ -290,4 +303,29 @@ model ImportacionDetalle {
 
   @@index([historialId])
   @@map("importacion_detalle")
+}
+
+// Fase 20 (Modulo de Pagos): un pedido puede tener 0, 1 o muchos pagos
+// (parciales y/o mixtos, cualquier combinacion de metodos). Cada pago es un
+// registro independiente e inmutable — no hay UPDATE ni DELETE sobre esta
+// tabla (ver PagosService: solo `crear`/`buscarPorPedido`). El total del
+// pedido, el total pagado, el saldo pendiente y el estado de pago nunca se
+// almacenan: se calculan siempre a partir de estos registros.
+model Pago {
+  id            BigInt     @id @default(autoincrement())
+  pedidoId      BigInt     @map("pedido_id")
+  metodoPago    MetodoPago @map("metodo_pago")
+  monto         Decimal    @db.Decimal(10, 2)
+  // Solo aplican para metodoPago = efectivo; NULL para el resto de metodos.
+  montoRecibido Decimal?   @map("monto_recibido") @db.Decimal(10, 2)
+  vuelto        Decimal?   @db.Decimal(10, 2)
+  observacion   String?    @db.VarChar(255)
+  creadoPorId   BigInt     @map("creado_por_id")
+  creadoEn      DateTime   @default(now()) @map("creado_en")
+
+  pedido    Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Restrict)
+  creadoPor Usuario @relation("PagosRegistradosPorUsuario", fields: [creadoPorId], references: [id], onDelete: Restrict)
+
+  @@index([pedidoId])
+  @@map("pagos")
 }

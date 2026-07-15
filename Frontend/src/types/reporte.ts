@@ -1,6 +1,7 @@
 import type { FormatoExportacion } from './export';
+import type { MetodoPago } from './pago';
 import type { EstadoMotorizado } from './perfil-motorizado';
-import type { EstadoPedido } from './pedido';
+import type { EstadoPagoPedido, EstadoPedido } from './pedido';
 
 /**
  * Contrato exacto de Backend/src/modules/reportes (revisado directamente
@@ -23,6 +24,11 @@ export interface ReportePedidoItem {
   tiendaNombre: string;
   clienteId: string;
   motorizadoActualId: string | null;
+  /** Derivados de pagos (Fase 21) — nunca recalculados en el frontend. Reporte de Pedidos usa totalPagado/saldoPendiente/metodosUtilizados; Reporte de Entregas usa estadoPago/metodosUtilizados. */
+  totalPagado: string;
+  saldoPendiente: string;
+  estadoPago: EstadoPagoPedido;
+  metodosUtilizados: MetodoPago[];
 }
 
 /** Igual a ReportePedidosQueryDto. */

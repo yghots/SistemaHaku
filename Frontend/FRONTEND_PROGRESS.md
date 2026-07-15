@@ -1677,7 +1677,7 @@ La combinación `h-screen` (techo) + `flex` + `min-h-0` (permite que el hijo se 
 ### Verificaciones realizadas
 
 - **Drawer** (`Sidebar`, Fase 13): sin cambios de código; sigue siendo `position: fixed` en mobile (independiente de cualquier contenedor con scroll) y `stretch` en Desktop. El toggle `document.body.classList.add('overflow-hidden')` en `openDrawer`/`closeDrawer` sigue funcionando exactamente igual (ya no tenía nada que "prevenir" en la práctica una vez que el body no vuelve a desbordar, pero no se tocó por no ser imprescindible).
-- **Dropdown/Tooltip** (Portal a `document.body`, Fase 15/18): su reposicionamiento ya escuchaba `scroll` en fase de captura sobre `window` específicamente para detectar el scroll de *cualquier* contenedor interno (ver `CLAUDE.md` §18) — siguen reposicionándose correctamente con el nuevo `scrollArea` sin cambios.
+- **Dropdown/Tooltip** (Portal a `document.body`, Fase 15/18): su reposicionamiento ya escuchaba `scroll` en fase de captura sobre `window` específicamente para detectar el scroll de _cualquier_ contenedor interno (ver `CLAUDE.md` §18) — siguen reposicionándose correctamente con el nuevo `scrollArea` sin cambios.
 - **Reportes/Exportación** (Fase 9/18): ninguna página ni componente de Reportes fue tocado; siguen viviendo dentro de `mount`, ahora contenido simple de `scrollArea`.
 - Se buscó (`grep`) cualquier uso de `window.scrollTo`/`scrollTop`/`scrollIntoView`/posicionamiento `sticky` en todo `src/` que pudiera depender del scroll a nivel de documento — no se encontró ninguno.
 - `npx tsc --noEmit`, `npx eslint "src/**/*.ts"`, `npx prettier --check`, `npm run build` — los cuatro sin errores.
@@ -1743,3 +1743,258 @@ Verificado por lectura de código: la grilla de tarjetas (`grid-cols-1 lg:grid-c
 ### Problemas encontrados
 
 Ninguno bloqueante en el frontend. Los 2 bugs reales encontrados durante esta fase (usuarioId inexistente dejando filas sin historial; usuario eliminado lógicamente abortando el archivo completo) eran del backend y se corrigieron ahí — ver el detalle en `Backend/DEVELOPMENT_PROGRESS.md` Fase 17.
+
+## Fase 20 — Módulo de Pagos
+
+Integrado dentro del detalle de Pedidos (Admin): sin pantalla independiente, tal como pide la fase. Nueva sección "Pagos" en el modal de "Ver detalle" — resumen calculado, historial de pagos y registro vía `FormModal`. Consume el módulo backend nuevo `pagos` (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 18).
+
+### Estructura
+
+- **`src/types/pago.ts`**: espejo exacto de `Backend/src/modules/pagos` (revisado directamente en los DTOs) — `MetodoPago` (enum cerrado: efectivo/yape/plin/transferencia/tarjeta), `Pago`, `CrearPagoPayload`, `ResumenPagoPedido`.
+- **`src/services/pedidos.service.ts`** (extendido, no un servicio nuevo): `registrarPago`, `obtenerPagos`, `obtenerResumenPagos` — mismo criterio ya establecido desde la Fase 8 ("si la URL cuelga de `/pedidos/:id/...`, el método va en `PedidosService`, nunca en un servicio nuevo").
+- **`src/pages/admin/pedidos/pedido-pagos.ts`**: resumen (`DetailList`: total del pedido, total pagado, saldo pendiente, estado vía `Badge`) + historial (`DataTable`: fecha, usuario, método, monto, observación — sin botones de editar/eliminar, tal como pide la fase). Mismo patrón que `PedidoFotos`/`PedidoHistorial` (Fase 8/17): recibe los datos ya cargados, no hace fetch propio.
+- **`src/pages/admin/pedidos/pedido-pago-form.ts`**: formulario de registro — método, monto, monto recibido (solo efectivo, oculto automáticamente para el resto de métodos), vuelto (solo lectura, calculado en vivo mientras se escribe), observación.
+- **`src/utils/format-monto.ts`** (nuevo, compartido): la función `formatMonto` ya estaba duplicada 3 veces en el proyecto (`pedidos.page.ts`, `historial.page.ts` y `mis-pedidos.page.ts` del panel Rider, todas fuera del alcance de esta fase — "no modificar el flujo operativo de pedidos"); se extrajo una única versión nueva para el código de Pagos en vez de sumar una 4ª copia, sin tocar las 3 ya existentes.
+
+### Integración en el detalle de Pedidos
+
+`pedidos.page.ts` (`openDetailModal`): se agrega una tercera sección (`Section({ title: 'Pagos', actions: <Boton Registrar pago>, children: [pagosSlot] })`) junto a "Historial" y "Fotos" ya existentes, con el mismo patrón de `Loader` mientras carga. `usuarioLabelById` (nuevo mapa, construido una vez en `init()` vía `UsuariosService.listar` + `nombreCompleto`, mismo patrón que `motorizadoLabelById`/`clienteLabelById`) resuelve `creadoPorId` a nombre completo en la columna "Usuario" — nunca se identifica a la persona solo por id (regla permanente desde la Fase 16/17). "Registrar pago" abre un `FormModal` (reutilizado tal cual, Fase 4) envolviendo `buildPagoForm()`; al confirmar, se llama a `PedidosService.registrarPago` con `creadoPorId` tomado de `SessionService.getCurrentUser()` (mismo patrón de campo de auditoría de la Fase 7), se muestra un toast de éxito y se refresca únicamente la sección Pagos (resumen + lista), sin recargar el resto del modal.
+
+### Componentes reutilizados (ninguno nuevo salvo `pedido-pagos.ts`/`pedido-pago-form.ts`, propios del módulo)
+
+`FormModal`, `DetailList`, `Badge`, `Button`, `Modal`, `DataTable`, `Section` (slot `actions`, ya usado por Usuarios), `Input`, `Select`, `Textarea`.
+
+### Flujo implementado
+
+Registrar pago → (validación cliente: monto > 0; si es efectivo, monto recibido ≥ monto) → `POST /pedidos/:id/pagos` → toast de éxito → refresco de la sección Pagos (resumen recalculado + nueva fila en el historial). El campo "Vuelto" se recalcula en vivo en el formulario como vista previa inmediata, pero el backend es siempre la fuente de verdad del valor final persistido.
+
+### Responsive y Dark Mode
+
+Verificado por lectura de código: la nueva sección reutiliza exactamente los mismos componentes (`Section`, `DetailList`, `DataTable`, `Badge`, `Button`, `FormModal`, `Input`/`Select`/`Textarea`) ya verificados en ambos temas y en los 3 breakpoints desde fases anteriores — ningún color, breakpoint ni clase nueva se introdujo. El grid de 2 columnas usado por el bloque "Monto recibido"/"Vuelto" (`grid-cols-1 sm:grid-cols-2`) sigue el mismo patrón responsive ya usado en el resto de formularios del proyecto.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint "src/**/*.ts"`, `npx prettier --write` (2 archivos reformateados, sin cambio funcional), `npm run build` — los cuatro sin errores.
+- Servidor de desarrollo (Vite) verificado activo; el módulo `pedidos.page.ts` (modificado) transforma sin errores y todos sus imports nuevos resuelven correctamente.
+- Backend probado exhaustivamente end-to-end (5 métodos de pago, parcial, mixto, vuelto exacto y con cambio real, las 7 validaciones pedidas, resumen recalculado) — ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 18 para el detalle completo.
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — la interacción real (abrir el detalle de un pedido, ocultar/mostrar los campos de efectivo al cambiar el método, ver el vuelto actualizarse en vivo, confirmar el registro) no se ejecutó de forma interactiva por mí; la verificación se hizo por lectura exhaustiva del código (mismos componentes ya verificados visualmente) y por pruebas funcionales directas contra el backend real que confirman que cada endpoint responde exactamente lo que el formulario espera.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante.
+
+## Fase 21 — Integración completa del módulo de Pagos
+
+Fase de integración pura: **no se tocó la infraestructura del módulo Pagos** (endpoints, DTOs, reglas de negocio, entidad `Pago` de la Fase 20 intactos). El backend ganó campos derivados nuevos en Pedidos/Reportes (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 19) que esta fase consume desde el frontend en las 4 pantallas que la fase pedía: Crear Pedido, Editar Pedido, Detalle de Pedido y Tabla de Pedidos, más Reportes y Exportaciones.
+
+### Tipos ampliados
+
+- **`src/types/pedido.ts`**: nuevo `EstadoPagoPedido = 'sin_pago' | 'pago_parcial' | 'pagado'` (espejo del tipo backend) + `Pedido` gana `estadoPago`/`saldoPendiente` — ambos calculados por el backend, nunca recalculados en el frontend.
+- **`src/types/reporte.ts`**: `ReportePedidoItem` gana `totalPagado`, `saldoPendiente`, `estadoPago`, `metodosUtilizados` (`MetodoPago[]`).
+- **`src/constants/estado-pago-pedido.ts`** (nuevo, mismo patrón que `constants/estado-pedido.ts`): `ESTADO_PAGO_PEDIDO_LABEL`/`ESTADO_PAGO_PEDIDO_BADGE_VARIANT`, reutilizado por la tabla de Pedidos y el Reporte de Entregas — evita duplicar el mapeo etiqueta/color en cada pantalla.
+- **`METODO_PAGO_LABEL`** (Fase 20, vivía sin exportar en `pedido-pago-form.ts`): se exportó y ahora lo reutilizan `pedido-pagos.ts` (que antes lo duplicaba), `pedido-form.ts` (lista de pagos temporales) y `reporte-pedido-columns.ts` (columna "Métodos utilizados") — una sola fuente para las 4 pantallas.
+
+### 1. Crear Pedido: sección "Pagos" en memoria
+
+`pedido-form.ts` gana una sección "Pagos" (solo en modo `create`, nunca en `edit`): reutiliza `buildPagoForm()` (Fase 20) como mini-formulario de alta, un botón "Agregar pago" que lo valida y lo empuja a una lista en memoria (`tempPagos`), y un `DataTable` con esa lista (Método/Monto/Observación + botón "Quitar" por fila, `IconButton` + `Trash2`). El mini-formulario se reconstruye por completo (`buildPagoForm()` nuevo) después de cada alta, en vez de exponer un método `reset()` nuevo — mismo criterio que `FormModal` (una instancia nueva por uso). `PedidoFormValues` gana `pagos?: PagoFormValues[]`, poblado solo en modo `create`.
+
+`pedidos.page.ts` (`openCreateModal`): al confirmar, primero crea el pedido (`PedidosService.crear`, sin tocar el DTO); solo si eso tiene éxito, registra los pagos de la lista **secuencialmente** (`PedidosService.registrarPago`, el mismo endpoint que "Registrar pago" reutiliza) — nunca en paralelo ni con ningún tipo de transacción distribuida, tal como pide la fase. Si un pago individual falla, su error se acumula y se muestra en un único `infoAlert` al final (`"Pedido creado, pero algunos pagos no se registraron"`), pero **el pedido creado nunca se pierde ni se revierte** — el modal siempre se cierra tras la creación exitosa del pedido, sin importar el resultado de los pagos.
+
+### 2. Editar Pedido: sin cambios de UI nuevos
+
+El botón "Registrar pago" ya vive en el detalle (Fase 20) y ahora también en la fila de la tabla (ver punto 4) — ambos reutilizan el mismo `openRegistrarPagoModal` con el mismo `FormModal`/`buildPagoForm()`, nunca un formulario nuevo. Nunca se edita ni elimina un pago ya registrado desde ningún punto del frontend.
+
+### 3. Detalle de Pedido: sección "Pagos" (ya existía, Fase 20)
+
+Confirmado sin cambios: la sección "Pagos" del modal de detalle (resumen + historial + botón "Registrar pago") ya cumplía exactamente lo pedido desde la Fase 20 — no requirió modificación.
+
+### 4. Tabla de Pedidos: columnas "Pago"/"Saldo" + acción "Registrar pago"
+
+`pedidos.page.ts` (`buildTable`): 2 columnas nuevas, "Pago" (`Badge` con `ESTADO_PAGO_PEDIDO_LABEL`/`_BADGE_VARIANT`) y "Saldo" (`formatMonto(row.saldoPendiente)`) — ambos valores ya vienen en la misma respuesta paginada de `GET /pedidos` (campos nuevos de `PedidoResponseDto`, Fase 19 del backend), **sin ninguna consulta adicional por fila** (cero N+1: la tabla sigue haciendo exactamente 1 solicitud por página, igual que antes de esta fase). Nueva acción de fila "Registrar pago" (icono `Wallet`) en el menú de `RowActions`, que abre el mismo `openRegistrarPagoModal` ya existente y recarga la tabla (`table.reload()`) al confirmar, para reflejar el nuevo saldo/estado sin salir del listado.
+
+### 5 y 6. Reportes y Exportaciones
+
+- **`reporte-pedido-columns.ts`**: 2 nuevas funciones exportadas, `buildReportePedidosPagoColumns()` (Total pagado, Saldo pendiente, Métodos utilizados) y `buildReporteEntregasPagoColumns()` (Estado de pago vía `Badge`, Métodos utilizados) — `buildReportePedidoColumns()` (columnas base, compartidas) queda intacta; cada página compone `[...columnasBase, ...columnasDePago]`.
+- `reporte-pedidos.page.ts`/`reporte-entregas.page.ts`: solo se agregó el spread de las columnas nuevas a `buildTable()` — el resto de la página (filtros, KPIs, exportación) no cambió.
+- Las exportaciones (Excel/PDF/CSV/JSON/XML) ya incluyen las columnas nuevas porque el backend las agregó a `COLUMNAS_REPORTE_PEDIDOS`/`COLUMNAS_REPORTE_ENTREGAS` (Fase 19 del backend) — el frontend no tuvo que tocar `ExportButton` ni ningún código de descarga: sigue siendo el mismo componente y el mismo flujo de la Fase 18, sin cambios.
+- **Reporte de Productividad no se tocó**, tal como pide la fase.
+
+### Componentes reutilizados (ninguno nuevo, salvo el archivo de constantes de estado de pago)
+
+`FormModal`, `DataTable`, `DetailList`, `Badge`, `Section`, `Button`, `IconButton`, `Modal`, `RowActions` — cero componentes duplicados.
+
+### Responsive y Dark Mode
+
+Verificado por lectura de código: toda la UI nueva (sección "Pagos" del formulario, columnas nuevas de tabla, badges, columnas de reporte) se construye exclusivamente con componentes ya verificados en ambos temas y en los 3 breakpoints desde fases anteriores (`DataTable` ya genera automáticamente la vista de tarjetas en mobile desde la Fase 13, sin cambios necesarios) — ningún color, breakpoint ni clase nueva se introdujo fuera de los tokens semánticos ya establecidos.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint . --fix`, `npx prettier --write` (4 archivos reformateados, sin cambio funcional), `npm run build` (`tsc && vite build`) — las cuatro sin errores.
+- Servidor de desarrollo (Vite) y backend verificados activos y respondiendo.
+- Backend probado exhaustivamente a nivel de API simulando exactamente la secuencia que ejecuta el frontend: pedido sin pagos, pedido con pago único, pedido con pagos mixtos (3 métodos, parcial → pagado), registrar un pago adicional después de creado, y un pago que falla su propia validación sin afectar al pedido ya creado — ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 19 para el detalle completo (incluye las 5 exportaciones de ambos reportes verificadas con columnas diferenciadas).
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — el flujo interactivo completo (agregar/quitar pagos en el formulario de creación, ver las columnas nuevas en la tabla, abrir el modal "Registrar pago" desde la fila, exportar un reporte y abrir el archivo descargado, verificar visualmente responsive/dark mode) no se ejecutó interactivamente por mí; la verificación se hizo por lectura exhaustiva del código (mismos componentes ya verificados visualmente en fases anteriores), compilación/build limpios, y pruebas funcionales directas contra el backend real que confirman que cada endpoint responde exactamente lo que el frontend espera consumir.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante.
+
+## Fase 20.1 — Corrección funcional: el registro de pagos pasa del Administrador al Motorizado
+
+Corrección de un error de modelado detectado en la revisión funcional de la Fase 21: el cobro al cliente ocurre en el momento de la entrega, no al crear el pedido — así que el registro de pagos se movió por completo del panel Administrador al flujo "Confirmar entrega" del panel Motorizado. **Cero cambios en el backend** (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 20.1) y **cero componentes nuevos** — se reutiliza `buildPagoForm()`/`METODO_PAGO_LABEL` (Fase 20) tal cual.
+
+### Panel Administrador: el registro de pagos desaparece por completo
+
+- **`pedido-form.ts`**: revertido a su forma anterior a la Fase 21 — se eliminó la sección "Pagos" completa (mini-formulario, lista temporal, `tempPagos`, botones agregar/quitar) y el campo `pagos?` de `PedidoFormValues`. El Administrador ya no puede registrar ningún pago al crear un pedido.
+- **`pedidos.page.ts`**:
+  - `openCreateModal` vuelve a ser un `PedidosService.crear` simple — se eliminó `registrarPagosDeCreacion` y toda la orquestación de pagos secuenciales post-creación.
+  - Se eliminó la acción de fila "Registrar pago" (icono `Wallet`) del menú de `RowActions` de la tabla.
+  - Se eliminó el botón "Registrar pago" de la sección "Pagos" del modal de detalle — la sección ahora es puramente informativa (`Section({ title: 'Pagos', description: 'El cobro al cliente se registra durante la entrega, en el panel del Motorizado.', children: [pagosSlot] })`), sin ningún control de edición.
+  - Se eliminó por completo la función `openRegistrarPagoModal` (ya no tiene ningún punto de entrada en este panel).
+- **Tabla de Pedidos**: las columnas "Pago" y "Saldo" (Fase 21) se conservan sin cambios — ya eran de solo consulta (`Badge`/texto, nunca un control editable), tal como pide esta corrección.
+- **`pedido-pagos.ts`** (resumen + historial de pagos, Fase 20): sin cambios — ya era de solo lectura, nunca tuvo un botón de acción propio; sigue reutilizándose tal cual en el detalle de Admin.
+
+### Panel Motorizado: "Confirmar entrega" gana el registro de pagos
+
+- **`confirmar-entrega-form.ts`** (reescrito): el formulario ahora se organiza en 4 `Section` en el orden pedido — Fotos → Observación → Resumen económico → Pagos:
+  - **Resumen económico**: `DetailList` de solo lectura (Valor del producto, Costo de envío, Total del pedido, Total pagado, Saldo pendiente) — los 3 últimos vienen de `PedidosService.obtenerResumenPagos` (mismo endpoint ya usado por el detalle de Admin desde la Fase 20), nunca recalculados en el frontend. Se muestra un `Loader` mientras se consulta (el modal se abre de inmediato, mismo patrón que "Ver detalle" — no bloquea la apertura del modal esperando la red).
+  - **Pagos**: mismo patrón de "sub-recurso armado en memoria antes de que el padre exista" documentado en `CLAUDE.md` §27 (usado por primera vez en la Fase 21, ahora reubicado aquí) — mini-formulario (`buildPagoForm()`) + lista temporal (`DataTable`, agregar/quitar). A diferencia de la Fase 21, el formulario **no llama servicios el mismo** (los formularios no hacen mutaciones, solo la página): expone `getPagosPendientes()`/`marcarPagoRegistrado(tempId)` para que `mis-pedidos.page.ts` orqueste el registro.
+- **`mis-pedidos.page.ts`** (`openConfirmarEntregaModal`, ahora `async`): al confirmar, se registran los pagos pendientes **secuencialmente, uno por uno** contra `PedidosService.registrarPago` (mismo endpoint reutilizado de la Fase 20); cada pago que se registra con éxito se quita de inmediato de la lista pendiente (`form.marcarPagoRegistrado`) para que, si algo falla más adelante, **un reintento nunca reenvíe un pago ya registrado**. Si un pago falla, se muestra el error y **la entrega nunca se confirma** (no se llama a `confirmarEntrega`) — los pagos ya exitosos quedan registrados (no hay forma de "deshacerlos": son registros inmutables por diseño del módulo Pagos, y no se inventó ninguna transacción distribuida para simular lo contrario). Solo si todos los pagos se registraron (o no había ninguno — el cobro sigue siendo opcional, el backend no lo exige) se llama a `PedidosService.confirmarEntrega`, exactamente con el mismo payload que antes de esta corrección.
+
+### Componentes reutilizados (ninguno nuevo)
+
+`FormModal`, `Modal`, `Section`, `DataTable`, `DetailList`, `Badge`, `Button`, `IconButton` — los mismos `Plus`/`Trash2`/`IconButton` que el formulario ya usaba para las fotos se reutilizaron tal cual para los pagos, sin un solo import de icono nuevo.
+
+### Endpoints reutilizados (ninguno nuevo, ninguno modificado)
+
+`POST /pedidos/:id/pagos`, `GET /pedidos/:id/pagos/resumen`, `POST /pedidos/:id/confirmar-entrega` (sin cambios en su DTO), `POST /pedidos`, `GET /pedidos`, `GET /reportes/entregas`.
+
+### Compatibilidad mantenida
+
+Reportes, exportaciones y la tabla de Pedidos (Fase 21) siguen funcionando sin ningún cambio — dependen únicamente de los campos ya calculados por el backend (`estadoPago`/`saldoPendiente`/`metodosUtilizados`), que no cambiaron. Reporte de Productividad no se tocó.
+
+### Responsive y Dark Mode
+
+Verificado por lectura de código: las 4 `Section` nuevas del formulario de "Confirmar entrega" reutilizan exactamente los mismos componentes (`Section`, `DetailList`, `DataTable`, `Badge`, `Button`, `IconButton`, `Loader`) ya verificados en ambos temas y en los 3 breakpoints desde fases anteriores — ningún color, breakpoint ni clase nueva se introdujo.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint . --fix`, `npx prettier --write` (1 archivo reformateado, sin cambio funcional), `npm run build` (`tsc && vite build`) — las cuatro sin errores.
+- Backend probado a nivel de API reproduciendo exactamente la secuencia que ahora ejecuta el Motorizado: crear pedido (Admin) → asignar → confirmar recojo → iniciar ruta → **pago inválido (falla, entrega NO se confirma, pedido permanece en `en_ruta`)** → pagos mixtos válidos (efectivo con vuelto + yape, completa el saldo) → **confirmar entrega (éxito, `estadoPago: "pagado"`)** → verificado también el caso "confirmar entrega sin ningún pago" (pedido de valor 0, éxito) — ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 20.1 para el detalle completo. Regresión verificada en `GET /pedidos` y `GET /reportes/entregas` sobre los pedidos de prueba.
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — el flujo interactivo completo (abrir "Confirmar entrega" desde la tabla del Motorizado, agregar/quitar pagos, ver el resumen económico cargar en vivo, confirmar y verificar que la sección "Pagos" del Administrador ya no muestra ningún botón de acción) no se ejecutó interactivamente por mí; la verificación se hizo por lectura exhaustiva del código y por pruebas funcionales directas contra el backend real que confirman que cada endpoint responde exactamente lo que el nuevo flujo espera.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante.
+
+## Bugfix — Localización monetaria (Perú)
+
+El sistema es exclusivamente para Perú, pero todos los montos se mostraban con el símbolo `$` (concatenado a mano, `` `$${valor}` ``). Corregido a nivel de **presentación únicamente** — cero cambios en backend, servicios, endpoints, DTOs o cálculos.
+
+### Infraestructura reutilizable creada
+
+- **`src/utils/format-monto.ts`** (`formatMonto`, ya existía desde la Fase 20 pero concatenaba `$` a mano) reescrita por completo para usar `Intl.NumberFormat` nativo (sin librerías externas): `new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })`. Produce automáticamente el símbolo correcto (`S/`), separadores de miles y exactamente dos decimales — verificado contra los 6 ejemplos exactos del bugfix (`S/ 0.00`, `S/ 10.00`, `S/ 25.50`, `S/ 150.00`, `S/ 1,250.00`, `S/ 12,580.45`) más `null`/`undefined`/valor no numérico (`"—"`).
+- **Se mantuvo el nombre `formatMonto`** (en vez de `formatCurrency`/`formatMoney`) por ser ya la convención establecida del proyecto desde la Fase 20 y estar en español, como el resto de utilidades (`nombreCompleto`, `formatMotorizado`) — renombrarla habría obligado a tocar cada punto de uso sin ningún beneficio funcional.
+- **Compatibilidad futura**: la moneda vigente vive en una única constante interna (`MONEDA_ACTUAL = { locale: 'es-PE', currency: 'PEN' }`), desacoplada de todo componente — cambiar de moneda en una fase futura solo requiere editar esa constante, nunca un punto de uso. Documentado como regla permanente en `CLAUDE.md` (nueva sección 28).
+
+### Componentes que ahora reutilizan `formatMonto`
+
+`pedido-pagos.ts` (ya la usaba desde la Fase 20/21), `pedidos.page.ts` (Admin), `reporte-pedido-columns.ts`, `historial.page.ts` (Motorizado), `mis-pedidos.page.ts` (Motorizado), `confirmar-entrega-form.ts` (Motorizado) — las 3 últimas tenían una función `formatMonto` **local duplicada** (con el mismo `` `$${valor}` `` hardcodeado, arrastrada desde antes de que existiera la utilidad compartida) que se eliminó por completo, reemplazada por el import de la única utilidad compartida.
+
+### Pantallas corregidas
+
+Se buscó exhaustivamente cualquier lugar del código que mostrara dinero (`grep` de `valorProducto`/`costoEnvio`/`totalPagado`/`saldoPendiente`/`totalPedido`/`.monto` y del patrón literal `` `$${` ``). Quedaron corregidas: tabla y detalle de Pedidos (Admin), formulario de "Confirmar entrega" (Motorizado, incluye Resumen económico y la lista de pagos), Reporte de Pedidos y Reporte de Entregas, historial del Motorizado. **Dashboard (Admin y Motorizado)** y **Reporte de Productividad** no mostraban ningún monto (solo conteos y porcentajes) — no requirieron cambios. **Importaciones** y **Mi Perfil** tampoco muestran dinero — verificado, sin cambios.
+
+### Exportaciones
+
+El backend de exportación no se tocó (instrucción explícita) y el frontend no tiene ninguna vista previa de montos exportados — el `ExportButton` solo descarga el archivo ya generado por el backend, sin renderizar su contenido antes. Nada que corregir en este punto.
+
+### Responsive y Dark Mode
+
+Verificado por lectura de código: `formatMonto` solo cambia el string devuelto, nunca el marcado ni las clases de los componentes que lo consumen (`DetailList`, `DataTable`, `Badge`, `StatCard`) — todos ya verificados en ambos temas y en los 3 breakpoints en fases anteriores. Sin regresión visual posible por este cambio.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint . --fix`, `npx prettier --check` (sin cambios de formato), `npm run build` (`tsc && vite build`) — las cuatro sin errores.
+- Verificación aislada de `formatMonto` (script Node reproduciendo la lógica exacta) contra: cero (`0`/`"0"`/`"0.00"`), enteros, decimales, miles, valores grandes, `null`, `undefined` y un string no numérico — los 6 ejemplos del bugfix coinciden exactamente carácter por carácter con el resultado real de `Intl.NumberFormat`.
+- `grep` exhaustivo confirmando **cero** ocurrencias restantes del patrón `` `$${` `` (el símbolo de dólar concatenado a mano) en todo `src/`.
+- Confirmado que las 6 pantallas que muestran dinero importan la misma y única `formatMonto` desde `utils/format-monto.ts` (ninguna definición local duplicada).
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — la inspección visual real (abrir cada pantalla y confirmar que se ve "S/" en vez de "$", en los 3 breakpoints y ambos temas) no se ejecutó interactivamente por mí; la verificación se hizo por lectura exhaustiva del código, compilación/build limpios, y una verificación aislada de la función de formateo con los casos exactos pedidos.
+
+### Compatibilidad mantenida
+
+Todos los llamadores de `formatMonto` mantienen exactamente la misma firma (`string | number | null | undefined`) — ningún call site tuvo que cambiar su forma de invocarla, solo el resultado visual cambió.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante.
+
+## Bugfix — Presentación uniforme de campos opcionales
+
+Muchos campos opcionales nulos/vacíos se mostraban de forma inconsistente: `"—"`, vacío, o directamente `null`/`undefined` sin ningún manejo. Corregido a nivel de **presentación únicamente** — cero cambios en backend, base de datos, DTOs, endpoints o reglas de negocio.
+
+### Infraestructura reutilizable creada
+
+- **`src/utils/format-optional.ts`** (nuevo): `formatOptional(value)` — `null`/`undefined`/`""` → `"No registrado"`; con información real, devuelve el valor exactamente igual, sin modificarlo. Exporta también la constante `SIN_VALOR_LABEL = 'No registrado'`, reutilizada directamente en los pocos casos donde el valor "verdadero" se transforma antes de mostrarse (ej. un id resuelto a una etiqueta) y por lo tanto `formatOptional` no aplica sobre el resultado final — evita que ese texto quede hardcodeado una segunda vez en cada condicional de ese tipo.
+- **`formatMonto` (bugfix anterior de localización) ahora reutiliza `SIN_VALOR_LABEL`** para sus casos `null`/`undefined`/no-numérico, en vez de `"—"` — un monto opcional sin valor (ej. "Valor del producto" nunca completado) se representa exactamente igual que cualquier otro campo opcional. Verificado que esto **no** afecta un monto real de cero (`0`/`"0.00"` sigue mostrando `"S/ 0.00"`, nunca `"No registrado"` — son datos distintos: "no se ingresó" vs. "se ingresó cero").
+
+### Componentes/pantallas corregidos
+
+Se buscó exhaustivamente (`grep` del literal `'—'` y de patrones `?? '—'`/`? ... : '—'`) en todo `src/`. Corregidos:
+
+- **Clientes** (`clientes.page.ts`): Documento de identidad (tabla + detalle).
+- **Tiendas** (`tiendas.page.ts`): RUC (tabla + detalle).
+- **Sucursales** (`sucursales.page.ts`): Referencia (detalle).
+- **Pedidos** (Admin `pedidos.page.ts`, Motorizado `historial.page.ts`/`mis-pedidos.page.ts`/`confirmar-entrega-form.ts`, Dashboard del Motorizado): Teléfono de contacto, Descripción del producto, Observaciones, Motorizado asignado (cuando aún no hay uno).
+- **Pagos** (`pedido-pagos.ts`, `confirmar-entrega-form.ts`): Observación de un pago.
+- **Historial de Pedido** (`pedido-historial.ts`): Estado y Motorizado de un evento (ambos pueden faltar según el tipo de evento).
+- **Incidentes** (`incidentes.page.ts`): Pedido asociado (un incidente puede no estar ligado a un pedido).
+- **Reporte de Pedidos / Reporte de Entregas** (`reporte-pedido-columns.ts`): Motorizado asignado, Métodos utilizados (cuando no hay pagos).
+- **Importaciones** (`historial-modal.ts`, `import-wizard-modal.ts`): Campo/Valor de una fila con error (un error a nivel de fila entera puede no señalar un campo específico).
+
+**Dashboard (Admin y Motorizado)** y los **KPI de Reportes** (`StatCard`) se revisaron explícitamente y **no** se tocaron: sus casos de `"—"` representan un estado de **carga** (`loading: true`, el dato todavía no se pidió) o un **fallo parcial** de una sección independiente (patrón `Promise.allSettled`, ya documentado en `CLAUDE.md` §17, con su propio `description: 'No se pudo obtener'`) — ninguno de los dos es "un campo opcional sin valor", y mostrar `"No registrado"` ahí sería incorrecto (implicaría que el dato no existe, cuando en realidad todavía se está cargando o falló la consulta). **Usuarios** y **Motorizados** no tienen ningún campo opcional en su tipo (`string | null`) — verificado en `types/usuario.ts`/`types/perfil-motorizado.ts` — no requirieron cambios. **Exportaciones**: no hay vista previa de datos en el frontend (`ExportButton` solo descarga el archivo ya generado por el backend), nada que corregir.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint . --fix`, `npx prettier --write` (2 archivos reformateados, sin cambio funcional), `npm run build` (`tsc && vite build`) — las cuatro sin errores.
+- Verificación aislada de `formatOptional` (script Node con la lógica exacta) contra: `null`, `undefined`, `""`, y valores reales (documento, RUC, referencia) — los `null`/`undefined`/`""` muestran `"No registrado"`, el resto se muestra sin modificar.
+- Verificación aislada de `formatMonto` confirmando que distingue "sin valor" (`null`/`undefined` → `"No registrado"`) de un monto real de cero (`0`/`"0.00"` → `"S/ 0.00"`).
+- `grep` exhaustivo confirmando que los únicos `'—'` restantes en `src/` son los 15 casos legítimos de `StatCard` (carga/error parcial de KPIs), ninguno de los cuales es un campo opcional.
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — la inspección visual real (abrir cada pantalla y confirmar "No registrado" en los 3 breakpoints y ambos temas) no se ejecutó interactivamente por mí; la verificación se hizo por lectura exhaustiva del código, compilación/build limpios, y una verificación aislada de ambas funciones de formateo. Al ser un cambio que solo altera el string devuelto (nunca el marcado ni las clases de `DetailList`/`DataTable`/`Badge`/`StatCard`), no hay superficie nueva de regresión visual.
+
+### Compatibilidad mantenida
+
+`formatOptional` y la `SIN_VALOR_LABEL` reutilizada por `formatMonto` no cambian ninguna firma existente — ningún call site tuvo que adaptarse más allá de reemplazar su propio `?? '—'` por la utilidad compartida.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante.

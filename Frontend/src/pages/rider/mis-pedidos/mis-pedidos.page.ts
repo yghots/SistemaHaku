@@ -36,6 +36,8 @@ import type { PaginatedResponse } from '../../../types/api';
 import type { Pedido } from '../../../types/pedido';
 import { el } from '../../../utils/dom';
 import { fetchAllPages } from '../../../utils/fetch-all-pages';
+import { formatMonto } from '../../../utils/format-monto';
+import { formatOptional } from '../../../utils/format-optional';
 import { formatMotorizado } from '../../../utils/format-motorizado';
 import { PedidoFotos } from '../../admin/pedidos/pedido-fotos';
 import { PedidoHistorial } from '../../admin/pedidos/pedido-historial';
@@ -45,10 +47,6 @@ import { buildIncidenteForm } from './incidente-form';
 const ESTADO_OPTIONS: SelectOption[] = Object.entries(ESTADO_PEDIDO_LABEL).map(
   ([value, label]) => ({ value, label }),
 );
-
-function formatMonto(value: string | null): string {
-  return value ? `$${value}` : '—';
-}
 
 /**
  * "Mis pedidos": panel del Motorizado, flujo operativo completo (CU08-CU12).
@@ -243,7 +241,7 @@ export function MisPedidosPage(): HTMLElement {
               {
                 label: 'Confirmar entrega',
                 icon: CheckCircle2,
-                onSelect: () => openConfirmarEntregaModal(row),
+                onSelect: () => void openConfirmarEntregaModal(row),
               },
               {
                 label: 'Cliente ausente',
@@ -309,12 +307,15 @@ export function MisPedidosPage(): HTMLElement {
           { label: 'Cliente', value: clienteLabel(pedido.clienteId) },
           { label: 'Sucursal', value: sucursalLabel(pedido.sucursalId) },
           { label: 'Direccion de entrega', value: pedido.direccionEntrega },
-          { label: 'Telefono de contacto', value: pedido.telefonoContacto ?? '—' },
-          { label: 'Descripcion del producto', value: pedido.descripcionProducto ?? '—' },
+          { label: 'Telefono de contacto', value: formatOptional(pedido.telefonoContacto) },
+          {
+            label: 'Descripcion del producto',
+            value: formatOptional(pedido.descripcionProducto),
+          },
           { label: 'Valor del producto', value: formatMonto(pedido.valorProducto) },
           { label: 'Costo de envio', value: formatMonto(pedido.costoEnvio) },
           { label: 'Estado', value: ESTADO_PEDIDO_LABEL[pedido.estado] },
-          { label: 'Observaciones', value: pedido.observaciones ?? '—' },
+          { label: 'Observaciones', value: formatOptional(pedido.observaciones) },
           { label: 'Creado', value: dayjs(pedido.creadoEn).format('DD/MM/YYYY HH:mm') },
         ],
       }),
@@ -398,9 +399,20 @@ export function MisPedidosPage(): HTMLElement {
     }
   }
 
-  function openConfirmarEntregaModal(pedido: Pedido): void {
+  /**
+   * Confirmar entrega (CU10, corregido en la Fase 20.1): el cobro al
+   * cliente ocurre aqui, no en la creacion del pedido (Admin). El modal se
+   * abre de inmediato (mismo patron que "Ver detalle") y el resumen
+   * economico se carga en segundo plano. Al confirmar: primero se
+   * registran los pagos armados en memoria, uno por uno — si alguno falla,
+   * la entrega NUNCA se confirma y los pagos ya registrados no se
+   * reintentan (se quitan de la lista pendiente apenas tienen exito). Solo
+   * si todos los pagos se registraron (o no habia ninguno) se llama a
+   * `confirmarEntrega`.
+   */
+  async function openConfirmarEntregaModal(pedido: Pedido): Promise<void> {
     if (!miMotorizadoId) return;
-    const form = buildConfirmarEntregaForm();
+    const form = buildConfirmarEntregaForm(pedido);
     const modal = FormModal({
       title: 'Confirmar entrega',
       content: form.element,
@@ -409,6 +421,33 @@ export function MisPedidosPage(): HTMLElement {
       onSubmit: async () => {
         const values = form.validate();
         if (!values) return false;
+
+        const usuario = SessionService.getCurrentUser();
+        if (!usuario) {
+          await infoAlert({
+            title: 'No se pudo confirmar la entrega',
+            text: 'No hay una sesion activa.',
+            icon: 'error',
+          });
+          return false;
+        }
+
+        for (const pago of form.getPagosPendientes()) {
+          try {
+            await PedidosService.registrarPago(pedido.id, {
+              metodoPago: pago.metodoPago,
+              monto: pago.monto,
+              montoRecibido: pago.montoRecibido,
+              observacion: pago.observacion,
+              creadoPorId: Number(usuario.id),
+            });
+            form.marcarPagoRegistrado(pago.tempId);
+          } catch (error) {
+            await showApiError(error);
+            return false;
+          }
+        }
+
         try {
           const actualizado = await PedidosService.confirmarEntrega(pedido.id, {
             motorizadoId: Number(miMotorizadoId),
@@ -425,6 +464,13 @@ export function MisPedidosPage(): HTMLElement {
       },
     });
     modal.open();
+
+    try {
+      const resumen = await PedidosService.obtenerResumenPagos(pedido.id);
+      form.setResumen(resumen);
+    } catch (error) {
+      await showApiError(error);
+    }
   }
 
   async function handleClienteAusente(pedido: Pedido): Promise<void> {

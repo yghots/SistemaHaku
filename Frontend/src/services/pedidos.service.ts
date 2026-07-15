@@ -2,6 +2,7 @@ import { httpClient } from './http/http-client';
 import type { PaginatedResponse } from '../types/api';
 import type { FotoEntrega } from '../types/foto-entrega';
 import type { HistorialPedido } from '../types/historial-pedido';
+import type { CrearPagoPayload, Pago, ResumenPagoPedido } from '../types/pago';
 import type {
   AsignarMotorizadoPayload,
   CancelarPedidoPayload,
@@ -27,8 +28,10 @@ interface ListSubrecursoParams {
  * (Fase 7) y flujo operativo (Fase 8). El flujo operativo vive bajo
  * `/pedidos/:id/<accion>` en el backend (modulo `flujo-pedido`), pero
  * conceptualmente pertenece a Pedidos — se extiende este servicio en vez
- * de crear uno nuevo. Lo mismo para historial y fotos (`/pedidos/:id/historial`,
- * `/pedidos/:id/fotos`): son sub-recursos de solo lectura de un Pedido.
+ * de crear uno nuevo. Lo mismo para historial, fotos y pagos
+ * (`/pedidos/:id/historial`, `/pedidos/:id/fotos`, `/pedidos/:id/pagos`):
+ * son sub-recursos de un Pedido (historial/fotos de solo lectura; pagos
+ * admite registrar + consultar, nunca editar ni eliminar — Fase 20).
  */
 export const PedidosService = {
   async listar(params: ListPedidosParams): Promise<PaginatedResponse<Pedido>> {
@@ -121,6 +124,25 @@ export const PedidosService = {
     const { data } = await httpClient.get<PaginatedResponse<FotoEntrega>>(`/pedidos/${id}/fotos`, {
       params,
     });
+    return data;
+  },
+
+  // ---- Pagos (Fase 20) ----
+
+  async registrarPago(id: string, payload: CrearPagoPayload): Promise<Pago> {
+    const { data } = await httpClient.post<Pago>(`/pedidos/${id}/pagos`, payload);
+    return data;
+  },
+
+  async obtenerPagos(id: string, params: ListSubrecursoParams): Promise<PaginatedResponse<Pago>> {
+    const { data } = await httpClient.get<PaginatedResponse<Pago>>(`/pedidos/${id}/pagos`, {
+      params,
+    });
+    return data;
+  },
+
+  async obtenerResumenPagos(id: string): Promise<ResumenPagoPedido> {
+    const { data } = await httpClient.get<ResumenPagoPedido>(`/pedidos/${id}/pagos/resumen`);
     return data;
   },
 };

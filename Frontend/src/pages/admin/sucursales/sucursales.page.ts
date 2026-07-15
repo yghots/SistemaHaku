@@ -20,6 +20,7 @@ import { SucursalesService } from '../../../services/sucursales.service';
 import { TiendasService } from '../../../services/tiendas.service';
 import type { Sucursal } from '../../../types/sucursal';
 import { el } from '../../../utils/dom';
+import { formatOptional } from '../../../utils/format-optional';
 import { buildSucursalForm } from './sucursal-form';
 
 /** Pagina de Sucursales: reutiliza la misma infraestructura CRUD que Tiendas (ver tiendas.page.ts). */
@@ -152,7 +153,7 @@ export function SucursalesPage(): HTMLElement {
           { label: 'Tienda', value: tiendaLabel(sucursal.tiendaId) },
           { label: 'Nombre', value: sucursal.nombre },
           { label: 'Direccion', value: sucursal.direccion },
-          { label: 'Referencia', value: sucursal.referencia ?? '—' },
+          { label: 'Referencia', value: formatOptional(sucursal.referencia) },
           { label: 'Telefono', value: sucursal.telefono },
           { label: 'Principal', value: sucursal.esPrincipal ? 'Si' : 'No' },
         ],

@@ -34,6 +34,7 @@ No existe autenticación por token (JWT) ni autorización por roles todavía: to
 | Incidentes              | CU13 — Reportar Incidente (crear/consultar/listar, sin editar/eliminar)              |
 | Reportes                | CU18, CU19, CU20 (solo lectura)                                                      |
 | Importaciones           | Fase 19 — Importación masiva de Clientes, Tiendas y Motorizados                      |
+| Pagos                   | Fase 20 — Registro de pagos por pedido (parciales y/o mixtos)                        |
 
 CU07 (Ver Pedidos Asignados) no tiene un filtro directo por motorizado en el listado de Pedidos; el mismo resultado se obtiene hoy vía `GET /reportes/pedidos?motorizadoId=`.
 
@@ -187,6 +188,18 @@ La respuesta es el archivo binario (`Content-Type` según el formato, `Content-D
 | GET    | `/importaciones/historial/:id/reporte-errores` | Descarga (o redescarga) el reporte de errores en Excel                       |
 
 `:entidad` es uno de `cliente`, `tienda`, `motorizado`. `analizar`/`confirmar` reciben el archivo como `multipart/form-data` (campo `archivo`); `confirmar` además exige `usuarioId` (quién confirma — no hay JWT, se recibe explícito, igual que `generadoPor` en exportación). Duplicados: Clientes por `documentoIdentidad`, Tiendas por `nombre`/`ruc`, Motorizados por `usuario` (ya con perfil) o `placa` — todas reglas ya implementadas en el CRUD de cada entidad, reutilizadas tal cual (ver `Backend/ARCHITECTURE.md` §8 y `DEVELOPMENT_PROGRESS.md` Fase 17 para el detalle, incluida la ambigüedad resuelta con el cliente sobre `documentoIdentidad`/`placa`). La importación de Motorizados nunca crea una cuenta de Usuario: `usuario` debe ser el login de una cuenta ya existente, con rol motorizado y activa.
+
+### Pagos (Fase 20)
+
+Registro de pagos de un pedido — parciales y/o mixtos, cualquier combinación de métodos. Un pago es un registro histórico inmutable: no existe edición ni eliminación.
+
+| Método | Ruta                        | Descripción                                                                    |
+| ------ | --------------------------- | ------------------------------------------------------------------------------- |
+| POST   | `/pedidos/:id/pagos`        | Registra un pago                                                               |
+| GET    | `/pedidos/:id/pagos`        | Lista los pagos del pedido (paginado)                                          |
+| GET    | `/pedidos/:id/pagos/resumen`| Resumen calculado: total del pedido, total pagado, saldo pendiente, estado     |
+
+`metodoPago` es uno de `efectivo`, `yape`, `plin`, `transferencia`, `tarjeta` (enum, no admite strings libres). Para `efectivo`, `montoRecibido` es obligatorio (`400` si es menor al `monto`) y el backend calcula `vuelto` automáticamente; para el resto de métodos, `montoRecibido` ni se solicita ni se acepta. `creadoPorId` (quién registra — no hay JWT, se recibe explícito). El resumen (`totalPedido`, `totalPagado`, `saldoPendiente`, `estadoPago`) nunca se almacena: se calcula en cada solicitud a partir de los pagos registrados (`totalPedido = valorProducto + costoEnvio` del pedido; `estadoPago = "pagado"` cuando `totalPagado >= totalPedido`). Ver `Backend/ARCHITECTURE.md` §9 y `DEVELOPMENT_PROGRESS.md` Fase 18 para el detalle completo.
 
 ## Máquina de estados de `Pedido`
 

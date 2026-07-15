@@ -46,4 +46,13 @@ export interface IPedidosRepository {
   ): Promise<{ data: Pedido[]; total: number }>;
   actualizar(id: bigint, data: ActualizarPedidoData): Promise<Pedido>;
   eliminar(id: bigint): Promise<Pedido>;
+  /**
+   * Suma de `monto` de los pagos (modulo Pagos, tabla `pago`, Fase 20) de
+   * cada pedido, en una unica consulta agregada (Fase 21) — nunca N+1. Solo
+   * lectura: no reimplementa ninguna regla del modulo Pagos, unicamente
+   * consulta la misma tabla que ya usa `PagosRepository.sumarMontoPorPedido`,
+   * igual que `ReportesRepository` ya consulta `pedido`/`incidente`
+   * directamente sin pasar por sus modulos duenos.
+   */
+  sumarMontoPagadoPorPedidos(pedidoIds: bigint[]): Promise<Map<string, number>>;
 }

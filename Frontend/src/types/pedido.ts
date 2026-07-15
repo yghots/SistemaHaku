@@ -30,6 +30,14 @@ export type EstadoPedido =
   | 'rechazado'
   | 'cliente_ausente';
 
+/**
+ * Estado de pago de un pedido para listados/reportes (Fase 21) — igual al
+ * tipo `EstadoPagoPedido` del backend (`common/types/estado-pago-pedido.type.ts`),
+ * mas granular que el binario `pagado`/`pendiente` de `ResumenPagoPedido`
+ * (modulo Pagos): distingue ademas "sin ningun pago" de "con pago parcial".
+ */
+export type EstadoPagoPedido = 'sin_pago' | 'pago_parcial' | 'pagado';
+
 /** Igual a PedidoResponseDto. Los montos llegan como string (Decimal serializado por Prisma), nunca number. */
 export interface Pedido {
   id: string;
@@ -46,6 +54,9 @@ export interface Pedido {
   estado: EstadoPedido;
   observaciones: string | null;
   creadoEn: string;
+  /** Calculado por el backend a partir de los pagos registrados (Fase 21) — nunca recalculado en el frontend. */
+  estadoPago: EstadoPagoPedido;
+  saldoPendiente: string;
 }
 
 /** Igual a CreatePedidoDto. */

@@ -19,6 +19,7 @@ import type {
 } from '../../../types/importacion';
 import { downloadBlob } from '../../../utils/download-file';
 import { el } from '../../../utils/dom';
+import { formatOptional } from '../../../utils/format-optional';
 import type { EntidadImportacionConfig } from './entidad-importacion.config';
 
 const COLUMNAS_FILAS: DataTableColumn<ResultadoFilaImportacion>[] = [
@@ -33,8 +34,8 @@ const COLUMNAS_FILAS: DataTableColumn<ResultadoFilaImportacion>[] = [
       }),
   },
   { key: 'motivo', header: 'Motivo' },
-  { key: 'campo', header: 'Campo', render: (row) => row.campo ?? '—' },
-  { key: 'valor', header: 'Valor', render: (row) => row.valor ?? '—' },
+  { key: 'campo', header: 'Campo', render: (row) => formatOptional(row.campo) },
+  { key: 'valor', header: 'Valor', render: (row) => formatOptional(row.valor) },
 ];
 
 /**

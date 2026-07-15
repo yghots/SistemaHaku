@@ -3,6 +3,7 @@ import { Badge } from '../../../components/badge/badge';
 import { DataTable, type DataTableColumn } from '../../../components/datatable/datatable';
 import { ESTADO_PEDIDO_BADGE_VARIANT, ESTADO_PEDIDO_LABEL } from '../../../constants/estado-pedido';
 import type { HistorialPedido, TipoEventoHistorial } from '../../../types/historial-pedido';
+import { SIN_VALOR_LABEL } from '../../../utils/format-optional';
 
 const TIPO_EVENTO_LABEL: Record<TipoEventoHistorial, string> = {
   cambio_estado: 'Cambio de estado',
@@ -37,12 +38,12 @@ export function PedidoHistorial(
               label: ESTADO_PEDIDO_LABEL[row.estado],
               variant: ESTADO_PEDIDO_BADGE_VARIANT[row.estado],
             })
-          : '—',
+          : SIN_VALOR_LABEL,
     },
     {
       key: 'motorizadoId',
       header: 'Motorizado',
-      render: (row) => (row.motorizadoId ? motorizadoLabel(row.motorizadoId) : '—'),
+      render: (row) => (row.motorizadoId ? motorizadoLabel(row.motorizadoId) : SIN_VALOR_LABEL),
     },
     { key: 'usuarioId', header: 'Registrado por', render: (row) => `#${row.usuarioId}` },
     {

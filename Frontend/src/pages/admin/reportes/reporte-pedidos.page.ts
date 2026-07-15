@@ -23,7 +23,10 @@ import { el } from '../../../utils/dom';
 import { fetchAllPages } from '../../../utils/fetch-all-pages';
 import { formatMotorizado } from '../../../utils/format-motorizado';
 import { nombreCompleto } from '../../../utils/nombre-completo';
-import { buildReportePedidoColumns } from './reporte-pedido-columns';
+import {
+  buildReportePedidoColumns,
+  buildReportePedidosPagoColumns,
+} from './reporte-pedido-columns';
 
 const ESTADO_OPTIONS: SelectOption[] = Object.entries(ESTADO_PEDIDO_LABEL).map(
   ([value, label]) => ({ value, label }),
@@ -165,10 +168,13 @@ export function ReportePedidosPage(): HTMLElement {
   }
 
   function buildTable(): void {
-    const columns = buildReportePedidoColumns({
-      clienteLabel: (id) => clienteLabelById.get(id) ?? id,
-      motorizadoLabel: (id) => motorizadoLabelById.get(id) ?? id,
-    });
+    const columns = [
+      ...buildReportePedidoColumns({
+        clienteLabel: (id) => clienteLabelById.get(id) ?? id,
+        motorizadoLabel: (id) => motorizadoLabelById.get(id) ?? id,
+      }),
+      ...buildReportePedidosPagoColumns(),
+    ];
 
     const table = ResourceTable({
       columns,

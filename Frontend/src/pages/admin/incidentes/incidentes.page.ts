@@ -14,6 +14,7 @@ import { IncidentesService } from '../../../services/incidentes.service';
 import { MotorizadosService } from '../../../services/motorizados.service';
 import type { Incidente, TipoIncidente } from '../../../types/incidente';
 import { el } from '../../../utils/dom';
+import { SIN_VALOR_LABEL } from '../../../utils/format-optional';
 import { formatMotorizado } from '../../../utils/format-motorizado';
 
 const TIPO_INCIDENTE_LABEL: Record<TipoIncidente, string> = {
@@ -41,7 +42,7 @@ export function IncidentesPage(): HTMLElement {
     {
       key: 'pedidoId',
       header: 'Pedido',
-      render: (row) => (row.pedidoId ? `#${row.pedidoId}` : '—'),
+      render: (row) => (row.pedidoId ? `#${row.pedidoId}` : SIN_VALOR_LABEL),
     },
     {
       key: 'motorizadoId',
@@ -114,7 +115,10 @@ export function IncidentesPage(): HTMLElement {
       content: DetailList({
         fields: [
           { label: 'ID', value: incidente.id },
-          { label: 'Pedido', value: incidente.pedidoId ? `#${incidente.pedidoId}` : '—' },
+          {
+            label: 'Pedido',
+            value: incidente.pedidoId ? `#${incidente.pedidoId}` : SIN_VALOR_LABEL,
+          },
           { label: 'Motorizado', value: motorizadoLabel(incidente.motorizadoId) },
           { label: 'Tipo', value: TIPO_INCIDENTE_LABEL[incidente.tipo] },
           { label: 'Resuelto', value: incidente.resuelto ? 'Si' : 'No' },
