@@ -114,8 +114,8 @@ model Usuario {
   deletedAt    DateTime?  @map("deleted_at")
 
   perfilMotorizado PerfilMotorizado?
-  pedidosCreados   Pedido[]          @relation("PedidosCreadosPorUsuario")
-  eventosHistorial HistorialPedido[] @relation("EventosRegistradosPorUsuario")
+  pedidosCreados   Pedido[]               @relation("PedidosCreadosPorUsuario")
+  eventosHistorial HistorialPedido[]      @relation("EventosRegistradosPorUsuario")
   importaciones    ImportacionHistorial[]
   pagosRegistrados Pago[]                 @relation("PagosRegistradosPorUsuario")
 
@@ -234,12 +234,19 @@ model HistorialPedido {
   @@map("historial_pedido")
 }
 
+// Fase 22: las fotografias se almacenan directamente en MySQL (LONGBLOB),
+// nunca como URL/archivo externo — decision arquitectonica definitiva del
+// proyecto. `imagen` es el binario crudo; `mimeType` siempre 'image/webp'
+// en la practica (unico formato aceptado por la validacion de la capa de
+// aplicacion, ver `modules/fotos-entrega/foto-entrega.validator.ts`), el
+// default a nivel de columna es solo una red de seguridad del esquema.
 model FotoEntrega {
   id           BigInt   @id @default(autoincrement())
   pedidoId     BigInt   @map("pedido_id")
   motorizadoId BigInt   @map("motorizado_id")
   tipo         TipoFoto
-  urlImagen    String   @map("url_imagen") @db.VarChar(500)
+  imagen       Bytes    @db.LongBlob
+  mimeType     String   @default("image/webp") @map("mime_type") @db.VarChar(50)
   esPrincipal  Boolean  @default(false) @map("es_principal")
 
   pedido     Pedido           @relation(fields: [pedidoId], references: [id], onDelete: Restrict)
@@ -271,7 +278,7 @@ model ImportacionHistorial {
   archivoNombre         String             @map("archivo_nombre") @db.VarChar(255)
   formato               FormatoImportacion
   usuarioId             BigInt             @map("usuario_id")
-  totalEncontrados       Int                @map("total_encontrados")
+  totalEncontrados      Int                @map("total_encontrados")
   importados            Int
   duplicados            Int
   errores               Int

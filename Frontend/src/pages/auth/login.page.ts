@@ -121,7 +121,7 @@ export function LoginPage(): HTMLElement {
       'span',
       {
         className:
-          'flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400',
+          'flex h-12 w-12 items-center justify-center rounded-xl bg-soft-brand-bg text-soft-brand-fg',
       },
       Icon({ icon: Truck, size: 24 }),
     ),

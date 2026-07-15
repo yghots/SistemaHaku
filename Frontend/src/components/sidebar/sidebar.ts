@@ -65,8 +65,8 @@ export function Sidebar(props: SidebarProps): SidebarHandle {
     return cn(
       'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
       active
-        ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-400'
-        : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+        ? 'bg-soft-brand-bg text-soft-brand-fg'
+        : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
     );
   }
 
@@ -105,7 +105,7 @@ export function Sidebar(props: SidebarProps): SidebarHandle {
     {
       type: 'button',
       className:
-        'hidden items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary lg:flex',
+        'hidden items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary lg:flex',
       'aria-label': collapsed ? 'Expandir menu' : 'Colapsar menu',
     },
     Icon({ icon: collapsed ? PanelLeftOpen : PanelLeftClose, size: 18 }),
@@ -117,7 +117,7 @@ export function Sidebar(props: SidebarProps): SidebarHandle {
     {
       type: 'button',
       className:
-        'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary lg:hidden',
+        'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary lg:hidden',
       'aria-label': 'Cerrar menu',
     },
     Icon({ icon: PanelLeftClose, size: 20 }),
@@ -135,7 +135,7 @@ export function Sidebar(props: SidebarProps): SidebarHandle {
     {
       className: cn(
         // Mobile (< lg): Drawer fijo, oculto fuera de pantalla por defecto.
-        'fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-border-default bg-surface-elevated transition-transform duration-200 ease-out',
+        'fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-border-default bg-surface-sidebar transition-transform duration-200 ease-out',
         'pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]',
         // Desktop (>= lg): vuelve a ser la barra estatica colapsable de siempre.
         'lg:static lg:inset-auto lg:z-auto lg:translate-x-0 lg:pb-0 lg:pl-0 lg:transition-[width] lg:duration-200 lg:ease-out',
@@ -149,7 +149,7 @@ export function Sidebar(props: SidebarProps): SidebarHandle {
 
   const backdrop = el('div', {
     className: cn(
-      'fixed inset-0 z-40 hidden bg-slate-950/50 opacity-0 transition-opacity duration-200 ease-out lg:hidden',
+      'fixed inset-0 z-40 hidden bg-overlay-scrim opacity-0 transition-opacity duration-200 ease-out lg:hidden',
     ),
   });
   backdrop.addEventListener('click', () => closeDrawer());

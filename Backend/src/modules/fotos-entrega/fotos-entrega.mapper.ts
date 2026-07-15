@@ -8,7 +8,7 @@ export class FotosEntregaMapper {
       pedidoId: foto.pedidoId.toString(),
       motorizadoId: foto.motorizadoId.toString(),
       tipo: foto.tipo,
-      urlImagen: foto.urlImagen,
+      mimeType: foto.mimeType,
       esPrincipal: foto.esPrincipal,
     });
   }

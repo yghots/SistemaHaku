@@ -125,9 +125,9 @@ Desde la Fase 17, toda respuesta de este módulo (`PerfilMotorizadoResponseDto`)
 | ------ | ----------------------------------- | ------------------------------------ |
 | POST   | `/pedidos/:id/asignar-motorizado`   | CU05 — Asignar Motorizado            |
 | POST   | `/pedidos/:id/reasignar-motorizado` | CU06 — Reasignar Motorizado          |
-| POST   | `/pedidos/:id/confirmar-recojo`     | CU08 — Confirmar Recojo (con foto)   |
+| POST   | `/pedidos/:id/confirmar-recojo`     | CU08 — Confirmar Recojo (`multipart/form-data`, campo `foto`, Fase 22)   |
 | POST   | `/pedidos/:id/iniciar-ruta`         | CU09 — Iniciar Ruta                  |
-| POST   | `/pedidos/:id/confirmar-entrega`    | CU10 — Confirmar Entrega (con fotos) |
+| POST   | `/pedidos/:id/confirmar-entrega`    | CU10 — Confirmar Entrega (`multipart/form-data`, campo `fotos` + `fotoPrincipalIndex` opcional, Fase 22) |
 | POST   | `/pedidos/:id/cliente-ausente`      | CU11 — Registrar Cliente Ausente     |
 | POST   | `/pedidos/:id/rechazo`              | CU12 — Registrar Rechazo             |
 | POST   | `/pedidos/:id/cancelar`             | CU04 — Cancelar Pedido               |
@@ -140,9 +140,12 @@ Desde la Fase 17, toda respuesta de este módulo (`PerfilMotorizadoResponseDto`)
 
 ### Fotos de Entrega (solo lectura)
 
-| Método | Ruta                 | Descripción                                         |
-| ------ | -------------------- | --------------------------------------------------- |
-| GET    | `/pedidos/:id/fotos` | CU17 — Fotos paginadas de recojo/entrega del pedido |
+Fase 22: las fotografías se almacenan directamente en MySQL (`FotoEntrega.imagen`, `LONGBLOB`) — ya no existen como URL ni archivo externo. El listado solo devuelve metadata (`id`/`pedidoId`/`motorizadoId`/`tipo`/`mimeType`/`esPrincipal`); el binario se sirve por separado.
+
+| Método | Ruta                                 | Descripción                                                                |
+| ------ | ------------------------------------ | --------------------------------------------------------------------------- |
+| GET    | `/pedidos/:id/fotos`                 | CU17 — Fotos paginadas de recojo/entrega del pedido (metadata, sin binario) |
+| GET    | `/pedidos/:id/fotos/:fotoId/imagen`  | Fase 22 — Sirve el binario de una foto (`Content-Type` según `mimeType`, siempre `image/webp`), leído directamente desde MySQL |
 
 ### Incidentes (CRUD parcial)
 

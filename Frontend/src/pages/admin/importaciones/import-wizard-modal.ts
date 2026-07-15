@@ -90,7 +90,7 @@ export function ImportWizardModal(config: EntidadImportacionConfig): ModalHandle
       { className: 'text-sm text-text-secondary' },
       archivoSeleccionado ? archivoSeleccionado.name : 'Ningun archivo seleccionado',
     );
-    const errorLabel = el('p', { className: 'text-sm text-danger-600 dark:text-danger-400' });
+    const errorLabel = el('p', { className: 'text-sm text-danger-600 dark-ui:text-danger-400' });
 
     const analizarButton = Button({
       label: 'Analizar',
@@ -312,7 +312,7 @@ export function ImportWizardModal(config: EntidadImportacionConfig): ModalHandle
     const content = el(
       'div',
       { className: 'flex flex-col items-center justify-center gap-3 py-10 text-center' },
-      el('span', { className: 'text-danger-600 dark:text-danger-400' }, message),
+      el('span', { className: 'text-danger-600 dark-ui:text-danger-400' }, message),
     );
     renderStep(content, [
       Button({ label: 'Volver', variant: 'secondary', onClick: () => volver() }),

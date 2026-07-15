@@ -1,7 +1,8 @@
 import { cn } from '../../utils/cn';
 import { el } from '../../utils/dom';
 
-export type BadgeVariant = 'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'info';
+export type BadgeVariant =
+  'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'dangerStrong' | 'info';
 
 export interface BadgeProps {
   label: string;
@@ -9,13 +10,20 @@ export interface BadgeProps {
   className?: string;
 }
 
+/**
+ * Todas las variantes de color consumen los tokens `--color-soft-*`
+ * (`src/styles/index.css`) — nunca `dark:`/color crudo aqui: el valor
+ * exacto por tema (Light/Dark/Midnight) vive unicamente en esos tokens,
+ * este componente no sabe ni necesita saber que tema esta activo.
+ */
 const VARIANT_CLASSES: Record<BadgeVariant, string> = {
-  neutral: 'bg-surface-muted text-text-secondary',
-  brand: 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-400',
-  success: 'bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-400',
-  warning: 'bg-warning-50 text-warning-700 dark:bg-warning-500/15 dark:text-warning-400',
-  danger: 'bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-400',
-  info: 'bg-info-50 text-info-700 dark:bg-info-500/15 dark:text-info-400',
+  neutral: 'bg-surface-hover text-text-secondary',
+  brand: 'bg-soft-brand-bg text-soft-brand-fg',
+  success: 'bg-soft-success-bg text-soft-success-fg',
+  warning: 'bg-soft-warning-bg text-soft-warning-fg',
+  danger: 'bg-soft-danger-bg text-soft-danger-fg',
+  dangerStrong: 'bg-soft-danger-strong-bg text-soft-danger-strong-fg',
+  info: 'bg-soft-info-bg text-soft-info-fg',
 };
 
 /**

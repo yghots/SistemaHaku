@@ -71,8 +71,8 @@ export function Dropdown(props: DropdownProps): DropdownHandle {
       'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors',
       'disabled:cursor-not-allowed disabled:opacity-50',
       item.danger
-        ? 'text-danger-600 hover:bg-danger-50 dark:hover:bg-danger-500/10'
-        : 'text-text-primary hover:bg-surface-muted',
+        ? 'text-danger-600 hover:bg-danger-50 dark-ui:hover:bg-danger-500/10'
+        : 'text-text-primary hover:bg-surface-hover',
     );
     const children = [item.icon ? Icon({ icon: item.icon, size: 16 }) : null, item.label];
 

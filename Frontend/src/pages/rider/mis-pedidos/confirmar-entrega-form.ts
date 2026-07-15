@@ -4,12 +4,15 @@ import { IconButton } from '../../../components/button/icon-button';
 import { Button } from '../../../components/button/button';
 import { DataTable, type DataTableColumn } from '../../../components/datatable/datatable';
 import { DetailList } from '../../../components/detail-list/detail-list';
-import { Input } from '../../../components/input/input';
 import { Loader } from '../../../components/loader/loader';
+import {
+  PhotoCapture,
+  type PhotoCaptureHandle,
+} from '../../../components/photo-capture/photo-capture';
 import { Section } from '../../../components/section/section';
 import { Textarea } from '../../../components/textarea/textarea';
 import type { ResumenPagoPedido } from '../../../types/pago';
-import type { FotoEntregaInput, Pedido } from '../../../types/pedido';
+import type { Pedido } from '../../../types/pedido';
 import { cn } from '../../../utils/cn';
 import { el } from '../../../utils/dom';
 import { formatMonto } from '../../../utils/format-monto';
@@ -21,7 +24,8 @@ import {
 } from '../../admin/pedidos/pedido-pago-form';
 
 export interface ConfirmarEntregaFormValues {
-  fotos: FotoEntregaInput[];
+  fotos: File[];
+  fotoPrincipalIndex?: number;
   observaciones?: string;
 }
 
@@ -42,7 +46,7 @@ export interface ConfirmarEntregaFormHandle {
 
 interface FotoRow {
   rowEl: HTMLElement;
-  urlInput: ReturnType<typeof Input>;
+  photo: PhotoCaptureHandle;
   principalCheckbox: ReturnType<typeof Checkbox>;
 }
 
@@ -75,17 +79,14 @@ export function buildConfirmarEntregaForm(pedido: Pedido): ConfirmarEntregaFormH
     fotosErrorText.classList.toggle('hidden', !message);
   }
 
+  /**
+   * "Principal" se comporta como un radio (solo una foto puede serlo, el
+   * backend recibe un unico `fotoPrincipalIndex`, Fase 22): no existe un
+   * componente Radio en el catalogo del proyecto, asi que la exclusividad
+   * se resuelve a mano con el `Checkbox` ya existente — marcar uno
+   * desmarca todos los demas.
+   */
   function addRow(): void {
-    const isFirst = rows.length === 0;
-    const urlInput = Input({
-      name: `fotoUrl-${rows.length}`,
-      label: isFirst ? 'URL de la foto' : undefined,
-      placeholder: 'https://...',
-    });
-    const principalCheckbox = Checkbox({
-      name: `fotoPrincipal-${rows.length}`,
-      label: 'Principal',
-    });
     const removeButton = IconButton({
       icon: Trash2,
       label: 'Quitar foto',
@@ -94,19 +95,31 @@ export function buildConfirmarEntregaForm(pedido: Pedido): ConfirmarEntregaFormH
       onClick: () => removeRow(rowEl),
     });
 
+    const photo = PhotoCapture({
+      label: rows.length === 0 ? 'Tomar foto de entrega' : 'Tomar otra foto',
+    });
+
+    const principalCheckbox = Checkbox({
+      name: `fotoPrincipal-${rows.length}`,
+      label: 'Principal',
+      onChange: (checked) => {
+        if (!checked) return;
+        for (const otherRow of rows) {
+          if (otherRow.principalCheckbox.checkbox !== principalCheckbox.checkbox) {
+            otherRow.principalCheckbox.checkbox.checked = false;
+          }
+        }
+      },
+    });
+
     const rowEl = el(
       'div',
-      { className: 'flex flex-wrap items-end gap-3' },
-      el('div', { className: 'min-w-0 flex-1 basis-full sm:basis-auto' }, urlInput.wrapper),
-      el(
-        'div',
-        { className: 'flex items-end gap-1' },
-        principalCheckbox.wrapper,
-        rows.length > 0 ? removeButton : null,
-      ),
+      { className: 'flex flex-wrap items-end gap-3 border-b border-border-default pb-4' },
+      el('div', { className: 'min-w-0 flex-1 basis-full sm:basis-auto' }, photo.element),
+      el('div', { className: 'flex items-end gap-1' }, principalCheckbox.wrapper, removeButton),
     );
 
-    rows.push({ rowEl, urlInput, principalCheckbox });
+    rows.push({ rowEl, photo, principalCheckbox });
     rowsContainer.appendChild(rowEl);
   }
 
@@ -114,6 +127,7 @@ export function buildConfirmarEntregaForm(pedido: Pedido): ConfirmarEntregaFormH
     if (rows.length <= 1) return;
     const index = rows.findIndex((row) => row.rowEl === rowEl);
     if (index === -1) return;
+    rows[index]!.photo.dispose();
     rows.splice(index, 1);
     rowEl.remove();
   }
@@ -245,16 +259,19 @@ export function buildConfirmarEntregaForm(pedido: Pedido): ConfirmarEntregaFormH
     setFotosError(undefined);
     observacionesField.setError(undefined);
 
-    const fotos: FotoEntregaInput[] = [];
+    const fotos: File[] = [];
+    let fotoPrincipalIndex: number | undefined;
     for (const row of rows) {
-      const urlImagen = row.urlInput.input.value.trim();
-      if (urlImagen) {
-        fotos.push({ urlImagen, esPrincipal: row.principalCheckbox.checkbox.checked });
+      const archivo = row.photo.getFile();
+      if (!archivo) continue;
+      if (row.principalCheckbox.checkbox.checked) {
+        fotoPrincipalIndex = fotos.length;
       }
+      fotos.push(archivo);
     }
 
     if (fotos.length === 0) {
-      setFotosError('Agrega al menos una URL de foto');
+      setFotosError('Toma o selecciona al menos una fotografia');
       return null;
     }
 
@@ -264,7 +281,7 @@ export function buildConfirmarEntregaForm(pedido: Pedido): ConfirmarEntregaFormH
       return null;
     }
 
-    return { fotos, observaciones: observaciones || undefined };
+    return { fotos, fotoPrincipalIndex, observaciones: observaciones || undefined };
   }
 
   function getPagosPendientes(): TempPago[] {

@@ -7,11 +7,11 @@ import type { DataTableColumn } from '../../../components/datatable/datatable';
 import { RowActions, type RowAction } from '../../../components/datatable/row-actions';
 import { DetailList } from '../../../components/detail-list/detail-list';
 import { EmptyState } from '../../../components/empty-state/empty-state';
-import { Input } from '../../../components/input/input';
 import { Loader } from '../../../components/loader/loader';
 import { FormModal } from '../../../components/modal/form-modal';
 import { Modal } from '../../../components/modal/modal';
 import { PageHeader } from '../../../components/page-header/page-header';
+import { PhotoCapture } from '../../../components/photo-capture/photo-capture';
 import {
   ResourceTable,
   type ResourceTableHandle,
@@ -344,28 +344,30 @@ export function MisPedidosPage(): HTMLElement {
     }
   }
 
+  /**
+   * Confirmar recojo (CU08, rediseñado en la Fase 23): la foto se toma
+   * desde la camara (o se selecciona un archivo si el navegador no
+   * soporta `capture`, ver `PhotoCapture`) y se optimiza automaticamente
+   * antes de mostrarse — nunca se envia la imagen original.
+   */
   function openConfirmarRecojoModal(pedido: Pedido): void {
     if (!miMotorizadoId) return;
-    const urlField = Input({
-      name: 'urlImagen',
-      label: 'URL de la foto del recojo',
-      required: true,
-      placeholder: 'https://...',
-    });
+    const photo = PhotoCapture({ label: 'Tomar foto de recojo' });
     const modal = FormModal({
       title: 'Confirmar recojo',
-      content: el('div', { className: 'flex flex-col gap-4' }, urlField.wrapper),
+      content: el('div', { className: 'flex flex-col gap-4' }, photo.element),
       submitLabel: 'Confirmar',
       onSubmit: async () => {
-        const urlImagen = urlField.input.value.trim();
-        if (!urlImagen) {
-          urlField.setError('Este campo es obligatorio');
+        photo.setError(undefined);
+        const foto = photo.getFile();
+        if (!foto) {
+          photo.setError('Toma o selecciona una fotografia del recojo');
           return false;
         }
         try {
           const actualizado = await PedidosService.confirmarRecojo(pedido.id, {
             motorizadoId: Number(miMotorizadoId),
-            urlImagen,
+            foto,
           });
           showSuccessToast('Recojo confirmado');
           applyPedidoActualizado(actualizado);
@@ -452,6 +454,7 @@ export function MisPedidosPage(): HTMLElement {
           const actualizado = await PedidosService.confirmarEntrega(pedido.id, {
             motorizadoId: Number(miMotorizadoId),
             fotos: values.fotos,
+            fotoPrincipalIndex: values.fotoPrincipalIndex,
             observaciones: values.observaciones,
           });
           showSuccessToast('Entrega confirmada');

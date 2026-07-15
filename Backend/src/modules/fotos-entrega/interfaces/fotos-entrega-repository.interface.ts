@@ -15,4 +15,6 @@ export interface IFotosEntregaRepository {
   buscarPorPedido(
     params: BuscarFotosPorPedidoParams,
   ): Promise<{ data: FotoEntrega[]; total: number }>;
+  /** Usado unicamente para servir el binario (`GET .../fotos/:fotoId/imagen`, Fase 22) — nunca para el listado paginado. */
+  buscarPorId(id: bigint): Promise<FotoEntrega | null>;
 }

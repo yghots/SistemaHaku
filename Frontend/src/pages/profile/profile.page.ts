@@ -1,4 +1,4 @@
-import { Moon, Sun } from 'lucide';
+import { Gem, Moon, Sun } from 'lucide';
 import { confirmDialog, infoAlert } from '../../components/alert/alert';
 import { Avatar } from '../../components/avatar/avatar';
 import { Badge } from '../../components/badge/badge';
@@ -323,7 +323,7 @@ export function ProfilePage(): HTMLElement {
         const temaActual: Theme = getTheme();
         return el(
           'div',
-          { className: 'flex gap-3' },
+          { className: 'flex flex-wrap gap-3' },
           Button({
             label: 'Claro',
             icon: Sun,
@@ -335,6 +335,12 @@ export function ProfilePage(): HTMLElement {
             icon: Moon,
             variant: temaActual === 'dark' ? 'primary' : 'outline',
             onClick: () => setTheme('dark'),
+          }),
+          Button({
+            label: 'Medianoche',
+            icon: Gem,
+            variant: temaActual === 'midnight' ? 'primary' : 'outline',
+            onClick: () => setTheme('midnight'),
           }),
         );
       }

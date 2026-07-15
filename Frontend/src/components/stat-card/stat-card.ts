@@ -29,18 +29,19 @@ export interface StatCardProps {
 }
 
 const TREND_CLASSES: Record<StatTrendDirection, string> = {
-  up: 'text-success-600 dark:text-success-400',
-  down: 'text-danger-600 dark:text-danger-400',
+  up: 'text-success-600 dark-ui:text-success-400',
+  down: 'text-danger-600 dark-ui:text-danger-400',
   neutral: 'text-text-muted',
 };
 
+/** Mismos tokens `--color-soft-*` que Badge (`src/styles/index.css`) — el icono-chip y el badge de un mismo estado usan exactamente el mismo color en los 3 temas. */
 const VARIANT_ICON_CLASSES: Record<StatCardVariant, string> = {
-  brand: 'bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400',
-  success: 'bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-400',
-  warning: 'bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-warning-400',
-  danger: 'bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-400',
-  info: 'bg-info-50 text-info-600 dark:bg-info-500/15 dark:text-info-400',
-  neutral: 'bg-surface-muted text-text-secondary',
+  brand: 'bg-soft-brand-bg text-soft-brand-fg',
+  success: 'bg-soft-success-bg text-soft-success-fg',
+  warning: 'bg-soft-warning-bg text-soft-warning-fg',
+  danger: 'bg-soft-danger-bg text-soft-danger-fg',
+  info: 'bg-soft-info-bg text-soft-info-fg',
+  neutral: 'bg-surface-hover text-text-secondary',
 };
 
 /**

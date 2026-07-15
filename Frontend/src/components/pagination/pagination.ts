@@ -21,7 +21,7 @@ function pageButtonClasses(active: boolean): string {
     'inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-2.5 text-sm font-medium transition-colors',
     active
       ? 'bg-brand-600 text-white'
-      : 'text-text-secondary hover:bg-surface-muted dark:hover:bg-white/10',
+      : 'text-text-secondary hover:bg-surface-hover dark-ui:hover:bg-white/10',
   );
 }
 

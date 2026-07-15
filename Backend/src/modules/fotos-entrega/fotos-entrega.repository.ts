@@ -27,4 +27,8 @@ export class FotosEntregaRepository implements IFotosEntregaRepository {
 
     return { data, total };
   }
+
+  buscarPorId(id: bigint): Promise<FotoEntrega | null> {
+    return this.prisma.fotoEntrega.findUnique({ where: { id } });
+  }
 }

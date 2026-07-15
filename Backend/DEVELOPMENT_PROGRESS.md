@@ -2622,3 +2622,47 @@ Excepción explícita y acotada al feature freeze: **no se reimplementó nada de
 ### Documentación actualizada
 
 `ARCHITECTURE.md` §9 (nota aclaratoria: el módulo es agnóstico de quién lo llama, la corrección fue de orquestación frontend). Ver `Frontend/FRONTEND_PROGRESS.md`, Fase 20.1, para el detalle completo del nuevo flujo en el panel del Motorizado.
+
+## Fase 21 — Nuevo sistema de almacenamiento de fotografías (LONGBLOB)
+
+Decisión arquitectónica definitiva, solicitada explícitamente: las fotografías de recojo/entrega dejan de almacenarse como URL (`FotoEntrega.urlImagen`) y pasan a almacenarse directamente en MySQL como binario. Proyecto sin datos de producción — **no se implementó ningún script de migración de datos ni compatibilidad hacia atrás**, tal como se pidió explícitamente.
+
+### Base de datos y Prisma
+
+- `FotoEntrega.urlImagen` (`String @db.VarChar(500)`) eliminado por completo. Reemplazado por `imagen` (`Bytes @db.LongBlob`) y `mimeType` (`String @default("image/webp") @db.VarChar(50)`). Sin campos adicionales (ancho/alto/peso/hash/EXIF/miniaturas) — explícitamente fuera de alcance.
+- **Migración `20260715192407_fotos_entrega_longblob`**: agregar `imagen` como `NOT NULL` sin default es incompatible con filas existentes (18 filas de prueba) — `prisma migrate dev` lo bloqueó automáticamente al detectar la pérdida de datos. Se vació la tabla `fotos_entrega` explícitamente (`prisma db execute`, `DELETE FROM fotos_entrega;`) antes de generar la migración, tal como autoriza la fase ("si se pierden fotografías de prueba, es completamente aceptable") — sin script de migración de datos, sin conservar `urlImagen` en paralelo.
+- `prisma generate` regenerado; el campo `FotoEntrega.imagen` se tipa como `Bytes` en el cliente (equivalente a `Uint8Array<ArrayBuffer>` en TypeScript — no `Buffer`, ver nota de compatibilidad de tipos más abajo).
+
+### Arquitectura: transporte, validación y recuperación
+
+- **Transporte exclusivo: `multipart/form-data`** — nunca Base64, nunca JSON. Reutiliza `@nestjs/platform-express` (`FileInterceptor`/`FilesInterceptor`), el mismo mecanismo ya usado por Importaciones (Fase 19), sin librerías nuevas.
+  - `POST /pedidos/:id/confirmar-recojo`: campo `foto` (un único archivo, `FileInterceptor`).
+  - `POST /pedidos/:id/confirmar-entrega`: campo `fotos` (uno o varios, `FilesInterceptor`) + campo de texto opcional `fotoPrincipalIndex` (índice 0-based dentro del arreglo subido) — reemplaza al antiguo `esPrincipal` por objeto, ya que multipart no transporta naturalmente un arreglo de objetos con archivo + metadata por elemento. `DTO` de cada endpoint (`ConfirmarRecojoDto`/`ConfirmarEntregaDto`) ya no tiene ningún campo de imagen — solo los campos de texto (`motorizadoId`, `observaciones`, `fotoPrincipalIndex`).
+  - `foto-entrega-input.dto.ts` (el antiguo DTO anidado con `urlImagen`/`esPrincipal` por foto) se eliminó por completo — ya no tiene ningún uso.
+- **Validación centralizada** (`modules/fotos-entrega/foto-entrega.validator.ts`, funciones puras sin inyección de dependencias, importadas directamente por `FlujoPedidoController`): `FOTO_ENTREGA_MIME_PERMITIDO = 'image/webp'` (único formato aceptado, 400 con mensaje explícito si no coincide) y `FOTO_ENTREGA_TAMANIO_MAXIMO_BYTES = 5 * 1024 * 1024` (aplicado vía `limits.fileSize` del interceptor, mismo patrón que `LIMITE_ARCHIVO_BYTES` de Importaciones — ninguna validación repetida entre los dos controllers que reciben fotos).
+- **Recuperación: nuevo endpoint `GET /pedidos/:id/fotos/:fotoId/imagen`** — sirve el binario (`StreamableFile` + header `Content-Type` tomado de `mimeType`) leyendo directamente desde MySQL, sin archivos temporales ni exportación a disco. Valida que la foto pertenezca al pedido de la ruta (404 si no, incluso si la foto existe pero pertenece a otro pedido — evita enumerar fotos ajenas). El listado paginado (`GET /pedidos/:id/fotos`) sigue devolviendo solo metadata (nunca el binario, que sería enormemente ineficiente en una respuesta paginada).
+- La transaccionalidad de `FlujoPedidoRepository.confirmarRecojo`/`confirmarEntrega` no cambió: la(s) fila(s) de `fotos_entrega` se siguen creando dentro de la misma `$transaction` que actualiza `Pedido` y escribe `historial_pedido` — solo cambiaron los campos persistidos.
+
+### Nota de compatibilidad de tipos (TypeScript/Prisma)
+
+Prisma 7 tipa `Bytes` como `Uint8Array<ArrayBuffer>` (no `Buffer`) en su cliente generado. El `Buffer` que expone Multer (`Express.Multer.File.buffer`) es estructuralmente un `Uint8Array<ArrayBufferLike>` — un tipo más amplio que incluye `SharedArrayBuffer`, que TypeScript 5.7+ ya no considera asignable a `Uint8Array<ArrayBuffer>`. Resuelto convirtiendo explícitamente con `Uint8Array.from(archivo.buffer)` en el límite de entrada (`FlujoPedidoService`) y tipando `imagen` como `Uint8Array<ArrayBuffer>` (nunca `Buffer`) en las interfaces internas (`FotoEntregaInput`, `ConfirmarRecojoData`, `ImagenFotoEntrega`) — sin este ajuste, `tsc` rechaza la asignación al crear/leer una `FotoEntrega`.
+
+### Pruebas funcionales realizadas (contra MySQL real, servidor en modo watch)
+
+- Flujo completo real: crear pedido → asignar motorizado → **confirmar recojo (multipart, 1 foto `image/webp`)** → iniciar ruta → **confirmar entrega (multipart, 2 fotos, `fotoPrincipalIndex=1`)** → verificado que la foto de recojo queda `esPrincipal: true` (regla ya existente, sin cambios) y que de las 2 fotos de entrega, solo el índice 1 quedó `esPrincipal: true`.
+- **Recuperación de imagen verificada byte a byte**: se descargó el binario servido por `GET .../fotos/:fotoId/imagen` y se comparó (`diff`) contra el archivo originalmente subido — idénticos, confirmando el round-trip completo (subida → `LONGBLOB` → lectura) sin pérdida ni corrupción, y el header `Content-Type: image/webp` correcto.
+- **Validación MIME**: un archivo con `Content-Type` distinto de `image/webp` fue rechazado con `400` y mensaje explícito (`"Formato de imagen no soportado ('application/octet-stream')..."`).
+- **Validación de archivo faltante**: `confirmar-recojo` sin campo `foto` y `confirmar-entrega` sin ningún archivo en `fotos` fueron rechazados con `400` (`"Debe adjuntar una fotografia"`/`"...al menos una fotografia"`).
+- **Aislamiento entre pedidos**: `GET /pedidos/:id/fotos/:fotoId/imagen` con un `id` de pedido que no es dueño de esa foto responde `404` (`"Foto no encontrada"`), no expone el binario de otro pedido.
+- **Regresión**: `GET /pedidos/:id/historial` del pedido de prueba muestra los 4 eventos esperados (asignado/recogido/en_ruta/entregado) sin cambios — el flujo operativo no sufrió ninguna regresión.
+- `grep` exhaustivo confirmando **cero** referencias a `urlImagen` en todo `src/`/`prisma/` (fuera de un comentario explicativo).
+- `prisma validate` ✓, `prisma generate` ✓, `tsc --noEmit` ✓, `npm run build` ✓, `npm run lint` (eslint) ✓, `npm test` (unit) ✓, `npm run test:e2e` ✓.
+
+### Archivos modificados/creados
+
+- `prisma/schema.prisma`, migración nueva (`20260715192407_fotos_entrega_longblob`).
+- `src/modules/fotos-entrega/`: `foto-entrega.validator.ts` (nuevo), `interfaces/fotos-entrega-repository.interface.ts`, `fotos-entrega.repository.ts`, `fotos-entrega.service.ts`, `fotos-entrega.controller.ts`, `fotos-entrega.mapper.ts`, `dto/foto-entrega-response.dto.ts`.
+- `src/modules/flujo-pedido/`: `interfaces/flujo-pedido-repository.interface.ts`, `flujo-pedido.repository.ts`, `flujo-pedido.service.ts`, `flujo-pedido.controller.ts`, `dto/confirmar-recojo.dto.ts`, `dto/confirmar-entrega.dto.ts`; `dto/foto-entrega-input.dto.ts` eliminado.
+- `ARCHITECTURE.md`, `API_OVERVIEW.md` actualizados.
+
+**No se modificó ningún otro módulo** (Pedidos, Historial, Usuarios, Clientes, Tiendas, Sucursales, Motorizados, Pagos, Reportes, Dashboard, Importaciones, Exportaciones) — el backend vuelve a quedar en feature freeze al cerrar esta fase, salvo por la captura desde cámara y la optimización de imágenes, explícitamente diferidas a la siguiente fase (y explícitamente fuera del alcance del Frontend en esta).

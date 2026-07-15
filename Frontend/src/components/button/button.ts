@@ -23,14 +23,16 @@ export interface ButtonProps {
 
 /** Exportado para que IconButton reutilice exactamente la misma paleta de variantes (DRY). */
 export const BUTTON_VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 focus-visible:outline-brand-600',
+  primary:
+    'bg-brand-600 text-white shadow-button hover:bg-brand-700 active:bg-brand-800 focus-visible:outline-brand-600',
   secondary:
-    'bg-surface-muted text-text-primary hover:bg-border-default focus-visible:outline-text-muted dark:hover:bg-white/10',
+    'bg-surface-muted text-text-primary hover:bg-border-default focus-visible:outline-text-muted dark-ui:hover:bg-white/10',
   outline:
-    'border border-border-default text-text-secondary hover:bg-surface-muted focus-visible:outline-text-muted',
-  danger: 'bg-danger-600 text-white hover:bg-danger-700 focus-visible:outline-danger-600',
+    'border border-border-default text-text-secondary hover:bg-surface-hover focus-visible:outline-text-muted',
+  danger:
+    'bg-danger-600 text-white shadow-button hover:bg-danger-700 active:bg-danger-800 focus-visible:outline-danger-600',
   ghost:
-    'text-text-secondary hover:bg-surface-muted focus-visible:outline-text-muted dark:hover:bg-white/10',
+    'text-text-secondary hover:bg-surface-hover focus-visible:outline-text-muted dark-ui:hover:bg-white/10',
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {

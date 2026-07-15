@@ -43,7 +43,7 @@ export function Modal(props: ModalProps): ModalHandle {
     {
       type: 'button',
       className:
-        'rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-muted hover:text-text-primary',
+        'rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary',
       'aria-label': 'Cerrar',
     },
     Icon({ icon: X, size: 18 }),
@@ -51,7 +51,7 @@ export function Modal(props: ModalProps): ModalHandle {
 
   const panel = el('div', {
     className: cn(
-      'flex max-h-[85vh] w-full origin-center flex-col rounded-xl bg-surface-elevated shadow-lg',
+      'flex max-h-[85vh] w-full origin-center flex-col rounded-xl border border-border-default bg-surface-elevated shadow-lg',
       'scale-95 opacity-0 transition-all duration-150 ease-out',
       'focus:outline-none',
       SIZE_CLASSES[size],
@@ -103,7 +103,7 @@ export function Modal(props: ModalProps): ModalHandle {
     'div',
     {
       className: cn(
-        'fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/50 p-4',
+        'fixed inset-0 z-50 hidden items-center justify-center bg-overlay-scrim p-4',
         'pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]',
         'pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]',
         'opacity-0 transition-opacity duration-150 ease-out',

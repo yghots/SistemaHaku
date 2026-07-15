@@ -76,8 +76,12 @@ export const PedidosService = {
     return data;
   },
 
+  /** Fase 22/23: la foto viaja como archivo (multipart/form-data, campo "foto"), ya optimizada por `utils/optimizar-foto.ts` — este metodo arma el `FormData`, nunca el llamador. */
   async confirmarRecojo(id: string, payload: ConfirmarRecojoPayload): Promise<Pedido> {
-    const { data } = await httpClient.post<Pedido>(`/pedidos/${id}/confirmar-recojo`, payload);
+    const formData = new FormData();
+    formData.append('motorizadoId', String(payload.motorizadoId));
+    formData.append('foto', payload.foto);
+    const { data } = await httpClient.post<Pedido>(`/pedidos/${id}/confirmar-recojo`, formData);
     return data;
   },
 
@@ -86,8 +90,20 @@ export const PedidosService = {
     return data;
   },
 
+  /** Fase 22/23: las fotos viajan como archivos (multipart/form-data, campo "fotos", uno o varios), ya optimizadas. */
   async confirmarEntrega(id: string, payload: ConfirmarEntregaPayload): Promise<Pedido> {
-    const { data } = await httpClient.post<Pedido>(`/pedidos/${id}/confirmar-entrega`, payload);
+    const formData = new FormData();
+    formData.append('motorizadoId', String(payload.motorizadoId));
+    if (payload.fotoPrincipalIndex !== undefined) {
+      formData.append('fotoPrincipalIndex', String(payload.fotoPrincipalIndex));
+    }
+    if (payload.observaciones) {
+      formData.append('observaciones', payload.observaciones);
+    }
+    for (const foto of payload.fotos) {
+      formData.append('fotos', foto);
+    }
+    const { data } = await httpClient.post<Pedido>(`/pedidos/${id}/confirmar-entrega`, formData);
     return data;
   },
 

@@ -44,10 +44,7 @@ export function Avatar(props: AvatarProps): HTMLElement {
   return el(
     'span',
     {
-      className: cn(
-        baseClassName,
-        'bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-400',
-      ),
+      className: cn(baseClassName, 'bg-avatar-fallback-bg text-avatar-fallback-fg'),
     },
     getInitials(props.name) || '?',
   );

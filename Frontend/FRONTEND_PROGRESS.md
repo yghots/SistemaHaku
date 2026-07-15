@@ -1998,3 +1998,129 @@ Se buscó exhaustivamente (`grep` del literal `'—'` y de patrones `?? '—'`/`
 ### Problemas encontrados
 
 Ninguno bloqueante.
+
+## Fase 21 — Nuevo tema premium "Midnight"
+
+Tercer tema visual (Light/Dark/Midnight), inspirado en Linear/Stripe Dashboard/Raycast/Warp/Arc/Vercel — grises azulados muy oscuros, profundidad por capas de superficie (nunca degradados), un único acento azul institucional compartido por los 3 temas. **Cero cambios de estructura, layout, tamaños, espaciados, iconografía o funcionamiento** — únicamente el sistema visual (colores/sombras/bordes), reutilizando al 100% la infraestructura de componentes existente.
+
+### Cómo evolucionó la arquitectura de temas
+
+Antes de esta fase, el sistema ya usaba Design Tokens para superficie/borde/texto (`--surface`, `--surface-elevated`, `--surface-muted`, `--border-default`, `--text-primary/secondary/muted`, redefinidos en `:root`/`.dark`), pero **los colores de acento "identity-bearing" (Badge, StatCard, Avatar, item activo del Sidebar) estaban hardcodeados con `dark:` directamente en cada componente** (ej. `bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-400`). Un tercer tema con su propia clase (`.midnight`) nunca hubiera activado esas clases `dark:` — se habrían quedado con los colores de Light, rompiendo Badges/StatCards/Avatar/Sidebar/varias páginas bajo Midnight. Se auditó **todo** `src/components` y `src/pages` (agente de exploración dedicado) y se encontraron 18 ocurrencias de `dark:` hardcodeado + 5 usos de color crudo sin token (`bg-slate-950/50` duplicado en Modal/Sidebar, `bg-slate-900`/`text-white` en Tooltip) repartidas en 13 archivos.
+
+**Resuelto convirtiendo el sistema en un verdadero Design Tokens de 3 vías**: cada superficie/tono se define UNA sola vez por tema en `src/styles/index.css` (`:root`/`.dark`/`.midnight`), y los componentes consumen exclusivamente el nombre del token — nunca vuelven a preguntar "¿qué tema está activo?". Ver `CLAUDE.md` §30 (nueva regla permanente) para el detalle completo de esta arquitectura.
+
+### Design Tokens creados (`src/styles/index.css`)
+
+- **3 custom variants**: `dark` (ya existía), `midnight` (nuevo, mismo mecanismo por clase), y **`dark-ui`** (nuevo — `&:where(.dark, .midnight, ...)`) para los pocos ajustes cosméticos sin identidad propia que deben verse igual en cualquier tema de base oscura (un tinte `white/10` de hover, por ejemplo), sin duplicar la declaración por tema.
+- **3 superficies nuevas** (`--surface-hover`, `--surface-sidebar`, `--surface-navbar`): iguales a `--surface-muted`/`--surface-elevated` en Light y Dark (cero cambio visual en esos dos temas), y con valores propios solo en Midnight — logran la profundidad por capas pedida (Fondo `#0A0C10` < Sidebar `#0F1117` < Navbar `#11151D` < Cards `#141923` < Hover `#1A2030`) sin tocar Light/Dark.
+- **12 tokens "suaves" de acento** (`--soft-<brand|success|warning|danger|danger-strong|info>-bg/fg`): unica fuente de los colores de Badge/StatCard/Avatar/Sidebar-activo/paginas — reemplazan los `dark:` hardcodeados. `danger-strong` es nuevo (par "rojo oscuro" para diferenciar "Rechazado" de "Cancelado", ambos antes idénticos).
+- **`--avatar-fallback-bg/fg`**, **`--tooltip-bg/fg`**, **`--overlay-scrim`**: mismo patrón, para el chip de iniciales de `Avatar`, la burbuja de `Tooltip` (antes `bg-slate-900`/`dark:bg-slate-700` crudos) y el fondo oscuro compartido por `Modal`/`Sidebar` (antes `bg-slate-950/50` duplicado en los dos archivos).
+- **`--shadow-xs/sm/md/lg`** ganan un override completo en `.midnight` (negro puro a baja opacidad — un gris tenue no se nota sobre un fondo casi negro) y **`--shadow-button`** es un token nuevo (`none` en Light/Dark, invisible; una sombra sutil + halo azul de 1px en Midnight) aplicado a los botones `primary`/`danger`.
+- **`--color-danger-800`** (nuevo escalón, `#991b1b`) para el estado `active:`/pressed de los botones `danger`.
+
+### Componentes que ahora consumen estos tokens
+
+`Badge` (variantes recoloreadas + nueva variante `dangerStrong`), `StatCard` (chips de ícono + tendencia), `Avatar` (chip de iniciales), `Sidebar` (link activo, hovers, fondo del aside, backdrop del Drawer), `Navbar` (fondo), `Modal` (backdrop + borde nuevo en el panel), `Dropdown` (hover de ítems), `Button` (hover/pressed/sombra de `primary`/`danger`, hover de `secondary`/`ghost`), `Pagination` (hover), `Tooltip` (fondo/texto), `DataTable` (encabezado + hover de filas y tarjetas móviles) — **ninguno perdió ni ganó una sola prop o cambió su estructura**, solo las clases de color. También se corrigieron 3 páginas con el mismo patrón de "chip de ícono" copiado a mano (`login.page.ts`, `admin/dashboard.page.ts`, `rider/dashboard.page.ts`) y 2 usos sueltos de texto de error (`import-wizard-modal.ts`).
+
+### Badges: paleta reasignada (`constants/estado-pedido.ts`)
+
+Siguiendo exactamente la paleta pedida: `asignado` pasa de `info` a `brand` (el azul institucional exacto, `#3B82F6`, distinto del celeste de `info`); `cliente_ausente` pasa de `danger` a `warning` (ámbar/naranja, la paleta dada solo define un tono naranja-ámbar); `rechazado` pasa de `danger` a la nueva variante `dangerStrong` ("rojo oscuro", para no verse idéntico a `cancelado`). `recogido`/`reprogramado`/`devuelto` no estaban en la paleta explícita — se mantuvieron en su familia ya usada, sin inventar un color nuevo.
+
+### Selector de tema
+
+- **`src/utils/theme.ts`**: `Theme` pasa de `'light' | 'dark'` a `'light' | 'dark' | 'midnight'`; `toggleTheme()` ahora cicla los 3 valores (antes alternaba solo 2) — mismo botón de un solo clic en Navbar/AuthLayout, sin cambiar la interacción.
+- **`THEME_TOGGLE_ICON`** (nuevo, exportado desde `components/navbar/navbar.ts` y reutilizado por `auth-layout.ts`): mapa único ícono-por-tema (☀ `Sun`/🌙 `Moon`/`Gem` para Midnight — un diamante, distinto de la luna de Dark, matching el símbolo ◈ pedido).
+- **Mi Perfil** (`profile.page.ts`, tarjeta "Tema"): se agregó un tercer botón "Medianoche" (mismo patrón que "Claro"/"Oscuro" ya existente — `Button` con `variant: 'primary'` cuando está activo) y `flex-wrap` al contenedor para que los 3 botones no desborden en mobile.
+
+### Decisiones de accesibilidad (WCAG AA)
+
+- Contraste texto-sobre-superficie verificado matemáticamente (fórmula de luminancia relativa WCAG): `text-primary` (blanco) sobre Cards (`#141923`) ≈ 18:1; `text-secondary` (`#A5B0C3`) ≈ 7.8:1; ambos superan AA (4.5:1) con margen. `text-muted` (`#6B7280`, el hex exacto dado para "Texto deshabilitado") ≈ 4:1 contra Cards — ligeramente por debajo del umbral AA para texto normal, pero WCAG 1.4.3 exime explícitamente a texto de componentes deshabilitados/inactivos, que es exactamente su uso en el proyecto.
+- **Nota transparente**: el borde dado (`#242B39` sobre Cards `#141923`) da un contraste bajo (~1.26:1), muy por debajo del 3:1 recomendado por WCAG 1.4.11 para límites de componentes. Es el mismo valor exacto pedido en la paleta, y el mismo patrón de "borde apenas perceptible + sombra para dar forma" que usan deliberadamente Linear/Vercel/Arc (las referencias citadas) — se mantuvo tal cual pedido, pero se documenta aquí para que quede a la vista si se prefiere aclarar el tono del borde en una fase futura. El foco (anillo azul de 2px, `ring-brand-500`) sí tiene contraste alto en los 3 temas y no se vio afectado.
+- El anillo de foco existente (`focus:ring-2 focus:ring-brand-500`) no se modificó: ya es un indicador azul discreto y de alto contraste en los 3 temas (el color de foco nunca cambia entre temas) — se consideró que ya cumple "focus elegante, glow discreto" sin necesitar una capa adicional.
+
+### Pantallas verificadas
+
+Por lectura exhaustiva de código (todas comparten los mismos componentes ya corregidos, sin markup propio de color): Dashboard (Admin y Motorizado), Pedidos (tabla, detalle, formularios), Confirmar entrega, Reportes (Pedidos/Entregas/Productividad — este último no se tocó, ya no mostraba `dark:` hardcodeado), Importaciones (wizard + historial), Mi Perfil, Clientes/Tiendas/Sucursales/Usuarios/Motorizados/Incidentes, Login.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint . --fix`, `npx prettier --check`, `npm run build` (`tsc && vite build`) — las cuatro sin errores. CSS final +1.6 KB (64.73 KB vs. 63.15 KB) — impacto de rendimiento despreciable.
+- Verificado que el CSS compilado por Tailwind realmente generó las nuevas utilidades/variants (`grep` sobre `dist/assets/*.css`): `soft-brand-bg`, `soft-danger-strong`, `surface-hover`, `surface-sidebar`, `surface-navbar`, `tooltip-bg`, `overlay-scrim`, `shadow-button` y el selector `.midnight` — todos presentes con el valor esperado.
+- `grep` exhaustivo confirmando **cero** ocurrencias de `dark:` hardcodeado restantes en `src/` (fuera de un comentario) y cero colores `slate-*`/`white`/`black` crudos.
+- Servidor de desarrollo (Vite) verificado activo; los módulos modificados (`theme.ts`, `navbar.ts`, `index.css`) transforman sin errores.
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — la inspección visual real (alternar entre los 3 temas y confirmar el aspecto premium en Desktop/Tablet/Mobile, ver el Drawer/Dropdown/Modal realmente flotando con sombra sobre Midnight) no se ejecutó interactivamente por mí; la verificación se hizo por lectura exhaustiva del código, inspección del CSS realmente compilado por Tailwind, cálculo matemático de contraste, y compilación/build limpios.
+
+### Compatibilidad mantenida
+
+Light y Dark quedan **visualmente idénticos** a como estaban antes de esta fase (todos los tokens nuevos usan exactamente los mismos valores que ya tenían esos dos temas; solo `.midnight` introduce valores propios). Ningún componente ganó o perdió props; ninguna página cambió de estructura; ninguna animación nueva se agregó (las transiciones existentes ya estaban dentro del rango 150-200ms pedido).
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante. Ver la nota de contraste de bordes en la sección de accesibilidad — no bloqueante, documentada para decisión futura.
+
+## Fase 22 — Captura inteligente y optimización automática de fotografías
+
+Rediseño completo del flujo de captura de fotografías del Motorizado (Confirmar Recojo y Confirmar Entrega), para alinearse con el nuevo backend de almacenamiento en MySQL (Fase 22 de Backend, ya no acepta URLs — exige `multipart/form-data` con `image/webp`). **Cero cambios en Backend.**
+
+### Nuevo flujo de captura
+
+Motorizado → Confirmar recojo/entrega → botón "Tomar foto" abre la cámara (o el selector de archivos si no hay soporte) → optimización automática (indicador de carga, sin bloquear la interfaz) → vista previa de la imagen **ya optimizada** → el usuario confirma → envío por `multipart/form-data`. Completamente transparente: el usuario nunca elige resolución, formato ni calidad.
+
+### Compatibilidad móvil y estrategia de fallback
+
+Un único `<input type="file" accept="image/*" capture="environment">` cubre ambos casos **sin ninguna detección de capacidades por JavaScript**: en Android/iPhone con soporte de `capture`, el navegador abre directamente la cámara trasera; en Desktop/Laptop/Tablet o cualquier navegador sin soporte, el mismo elemento degrada automáticamente al selector de archivos del sistema — es el propio navegador quien decide, por especificación. Esto es lo que garantiza "no depender de la galería" en móvil sin romper el flujo en desarrollo/escritorio.
+
+### Librería y optimización (`src/utils/optimizar-foto.ts`)
+
+- **`browser-image-compression`** (v2.0.2, tal como se pidió como preferencia) — no se implementó compresión manual con Canvas. Redimensiona el lado mayor a **1280px** (manteniendo proporción), convierte a **WebP** y comprime a **78%** de calidad (dentro del rango 75-80% pedido), usando **Web Worker** (`useWebWorker: true`, no bloquea la interfaz). La imagen original nunca se envía ni se conserva — solo se descarta tras optimizarla.
+- **Importada de forma perezosa** (`await import('browser-image-compression')` dentro de la función, no en el top-level): Rollup la separa en su propio chunk (`browser-image-compression-*.js`, ~52KB/20KB gzip, verificado en el build) — el resto de la aplicación (Admin, Dashboard, Reportes, etc., que nunca capturan fotos) no paga ese costo.
+
+### Nuevo componente reutilizable: `PhotoCapture`
+
+`src/components/photo-capture/photo-capture.ts` — único widget de captura+optimización+vista previa del proyecto, reutilizado tanto por "Confirmar recojo" (una foto obligatoria) como por "Confirmar entrega" (una o varias, mismo patrón de filas agregar/quitar ya usado para pagos). Maneja 3 estados (inicial/procesando/vista previa) y expone `getFile()` (el archivo ya optimizado, o `null`), `setError()` (mismo patrón de error inline que `Input`/`Textarea`/`Select`) y `dispose()` (libera el `object URL` de la vista previa al quitar una fila).
+
+### Cambios de contrato (alineados con el Backend, Fase 22)
+
+- **`types/pedido.ts`**: `ConfirmarRecojoPayload` cambia `urlImagen: string` → `foto: File`; `ConfirmarEntregaPayload` cambia `fotos: FotoEntregaInput[]` → `fotos: File[]` + `fotoPrincipalIndex?: number` (reemplaza al `esPrincipal` por foto — el backend ahora recibe un único índice, no un booleano por archivo). `FotoEntregaInput` eliminado.
+- **`types/foto-entrega.ts`**: `urlImagen` eliminado, `mimeType: string` agregado (metadata de una foto ya guardada).
+- **`services/pedidos.service.ts`**: `confirmarRecojo`/`confirmarEntrega` arman el `FormData` internamente (mismo patrón ya establecido por `importaciones.service.ts`, Fase 19) — el resto de la aplicación sigue pasando objetos tipados, nunca construye `FormData` a mano.
+- **`utils/foto-entrega-url.ts`** (nuevo): única función que construye la URL del binario de una foto ya guardada (`GET /pedidos/:id/fotos/:fotoId/imagen`, Fase 22 de Backend) a partir de `env.apiBaseUrl` — usada por `pedido-fotos.ts` (la tabla de fotos en "Ver detalle", Admin y Motorizado) para las miniaturas, que antes enlazaban directamente a `urlImagen`.
+
+### "Principal" sin componente Radio
+
+El backend acepta un único `fotoPrincipalIndex` en Confirmar Entrega (no un booleano por foto). El catálogo de componentes no tiene un `Radio` — se resolvió la exclusividad mutua a mano sobre el `Checkbox` ya existente (marcar uno desmarca los demás), en vez de crear un componente nuevo solo para esto.
+
+### Validaciones
+
+Antes de enviar: se exige que exista un archivo ya optimizado (`getFile()` no nulo) — si la optimización falló o el usuario no capturó ninguna foto, se muestra un error inline (mismo mecanismo que cualquier otro campo obligatorio del proyecto) y la solicitud nunca se envía. Un fallo de `optimizarFoto` (formato no soportado, error del Worker, etc.) nunca deja un archivo sin optimizar listo para enviarse — el widget vuelve al estado inicial.
+
+### Componentes modificados/creados
+
+Nuevo: `PhotoCapture`. Modificados: `confirmar-entrega-form.ts` (filas de foto ahora usan `PhotoCapture` en vez de un `Input` de URL), `mis-pedidos.page.ts` (`openConfirmarRecojoModal` reescrito), `pedido-fotos.ts` (miniaturas apuntan al nuevo endpoint binario). Ninguno de los componentes genéricos ya existentes (`Button`, `IconButton`, `Loader`, `Checkbox`, `DataTable`, `Section`, `FormModal`) se modificó — todos reutilizados tal cual.
+
+### Pruebas realizadas
+
+- `npx tsc --noEmit`, `npx eslint . --fix`, `npx prettier --write` (2 archivos reformateados, sin cambio funcional), `npm run build` (`tsc && vite build`) — las cuatro sin errores. Build confirma el code-splitting de `browser-image-compression` en un chunk separado.
+- **Simulación end-to-end real contra el backend**: se reprodujo exactamente el `FormData` que arma `PedidosService.confirmarRecojo`/`confirmarEntrega` (mismos nombres de campo: `motorizadoId`, `foto`, `fotos`, `fotoPrincipalIndex`, `observaciones`) usando un archivo `.webp` como sustituto de "ya optimizado" (no es posible ejecutar `browser-image-compression`, que depende de Canvas/Worker del navegador, dentro de Node) — flujo completo `asignado → confirmar recojo (1 foto) → en_ruta → confirmar entrega (2 fotos, fotoPrincipalIndex=1) → entregado`, verificado en el pedido de prueba real. `GET /pedidos/:id/fotos` devuelve exactamente la nueva forma (`mimeType`, sin `urlImagen`) y `GET /pedidos/:id/fotos/:fotoId/imagen` (construida por `fotoEntregaUrl`) sirve el binario con `Content-Type: image/webp` correcto.
+- Servidor de desarrollo (Vite) verificado activo; todos los módulos nuevos/modificados transforman sin error.
+
+**Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — la interacción real (abrir la cámara en un dispositivo Android/iPhone, ver la optimización correr sin congelar la interfaz, la vista previa mostrando exactamente la imagen optimizada, el fallback al selector de archivos en Desktop, responsive en los 3 breakpoints y los 3 temas) no se ejecutó interactivamente por mí. `browser-image-compression` es una librería madura y ampliamente usada (compresión/redimensionado/conversión ya validados por su propio ecosistema); mi responsabilidad de integración (contrato de datos, `FormData`, manejo de errores, estados de carga, componente reutilizable) se verificó por lectura exhaustiva del código, compilación/build limpios, y la simulación end-to-end contra el backend real descrita arriba.
+
+### Compatibilidad mantenida
+
+Ningún módulo fuera del flujo de fotografías fue tocado (Pedidos, Clientes, Tiendas, Sucursales, Usuarios, Pagos, Reportes, Dashboard, Importaciones, Exportaciones — todos intactos). El componente `PedidoFotos` (tabla de fotos ya guardadas) se actualizó únicamente para apuntar al nuevo endpoint binario, sin cambiar su estructura ni sus columnas.
+
+### URL local del servidor
+
+- Frontend: **http://localhost:5173**.
+- Backend: **http://localhost:3000/api/v1**.
+
+### Problemas encontrados
+
+Ninguno bloqueante.

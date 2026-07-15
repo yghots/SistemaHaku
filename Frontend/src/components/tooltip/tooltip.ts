@@ -38,9 +38,8 @@ export function Tooltip(props: TooltipProps): HTMLSpanElement {
         // pequeño (ej. Sidebar colapsado en una ventana angosta) se saldria
         // de la pantalla. `calc(100vw-1rem)` deja como maximo el ancho del
         // viewport con un margen de seguridad, sin afectar el caso normal.
-        'pointer-events-none absolute z-40 max-w-[calc(100vw-1rem)] whitespace-normal rounded-md bg-slate-900 px-2 py-1 text-xs text-white shadow-md',
+        'pointer-events-none absolute z-40 max-w-[calc(100vw-1rem)] whitespace-normal rounded-md bg-tooltip-bg px-2 py-1 text-xs text-tooltip-fg shadow-md',
         'opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100',
-        'dark:bg-slate-700',
         POSITION_CLASSES[position],
       ),
     },

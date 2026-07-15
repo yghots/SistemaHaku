@@ -19,17 +19,25 @@ export const ESTADO_PEDIDO_LABEL: Record<EstadoPedido, string> = {
   cliente_ausente: 'Cliente ausente',
 };
 
+/**
+ * Paleta de badges (Fase 21, tema Midnight): pendiente=gris, asignado=azul,
+ * en_ruta=naranja, entregado=verde, cancelado=rojo, cliente_ausente=ambar,
+ * rechazado=rojo oscuro (variante `dangerStrong`, distinta de `cancelado`
+ * para diferenciar visualmente ambos estados negativos). `recogido` y
+ * `reprogramado` no estaban en la paleta explicita — se mantienen en la
+ * familia mas cercana ya usada (info/warning) sin inventar un color nuevo.
+ */
 export const ESTADO_PEDIDO_BADGE_VARIANT: Record<EstadoPedido, BadgeVariant> = {
   pendiente: 'neutral',
-  asignado: 'info',
+  asignado: 'brand',
   recogido: 'info',
   en_ruta: 'warning',
   entregado: 'success',
   cancelado: 'danger',
   reprogramado: 'warning',
   devuelto: 'danger',
-  rechazado: 'danger',
-  cliente_ausente: 'danger',
+  rechazado: 'dangerStrong',
+  cliente_ausente: 'warning',
 };
 
 /** Estados terminales: el pedido ya cerro su ciclo de vida (no admite mas acciones del flujo operativo). */

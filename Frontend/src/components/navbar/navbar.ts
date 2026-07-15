@@ -1,13 +1,20 @@
-import { Bell, LogOut, Menu, Moon, Sun, User } from 'lucide';
+import { Bell, Gem, LogOut, Menu, Moon, Sun, User, type IconNode } from 'lucide';
 import { Avatar } from '../avatar/avatar';
 import { Breadcrumb, type BreadcrumbItem } from '../breadcrumb/breadcrumb';
 import { Icon } from '../icon/icon';
 import { IconButton } from '../button/icon-button';
 import { Dropdown } from '../dropdown/dropdown';
 import { SearchBar } from '../searchbar/searchbar';
-import { getTheme, onThemeChange, toggleTheme } from '../../utils/theme';
+import { getTheme, onThemeChange, toggleTheme, type Theme } from '../../utils/theme';
 import { cn } from '../../utils/cn';
 import { el } from '../../utils/dom';
+
+/** Icono del boton de tema por tema activo (Fase 21: Gem para Midnight, distinto de la Luna de Dark). Reutilizado por Navbar y AuthLayout — unica fuente del mapeo. */
+export const THEME_TOGGLE_ICON: Record<Theme, IconNode> = {
+  light: Sun,
+  dark: Moon,
+  midnight: Gem,
+};
 
 export interface NavbarProps {
   appName: string;
@@ -62,12 +69,12 @@ export function Navbar(props: NavbarProps): NavbarHandle {
   });
 
   const themeToggle = IconButton({
-    icon: getTheme() === 'dark' ? Sun : Moon,
+    icon: THEME_TOGGLE_ICON[getTheme()],
     label: 'Cambiar tema',
     onClick: () => toggleTheme(),
   });
   onThemeChange((theme) => {
-    const newIcon = Icon({ icon: theme === 'dark' ? Sun : Moon, size: 18 });
+    const newIcon = Icon({ icon: THEME_TOGGLE_ICON[theme], size: 18 });
     themeToggle.firstElementChild?.replaceWith(newIcon);
   });
 
@@ -100,7 +107,7 @@ export function Navbar(props: NavbarProps): NavbarHandle {
     'header',
     {
       className: cn(
-        'flex min-h-16 shrink-0 items-center gap-2 border-b border-border-default bg-surface-elevated px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] sm:gap-4 sm:px-6',
+        'flex min-h-16 shrink-0 items-center gap-2 border-b border-border-default bg-surface-navbar px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] sm:gap-4 sm:px-6',
         props.className,
       ),
     },

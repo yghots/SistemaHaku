@@ -2,6 +2,7 @@ import { Badge } from '../../../components/badge/badge';
 import { DataTable, type DataTableColumn } from '../../../components/datatable/datatable';
 import type { FotoEntrega, TipoFoto } from '../../../types/foto-entrega';
 import { el } from '../../../utils/dom';
+import { fotoEntregaUrl } from '../../../utils/foto-entrega-url';
 
 const TIPO_FOTO_LABEL: Record<TipoFoto, string> = {
   recojo: 'Recojo',
@@ -9,32 +10,35 @@ const TIPO_FOTO_LABEL: Record<TipoFoto, string> = {
 };
 
 /**
- * Tabla de fotografias de recojo/entrega de un pedido. El backend solo
- * almacena URLs (no archivos): cada fila muestra una miniatura enlazada a
- * la imagen original. Reutilizada por el "Ver detalle" de Pedidos (Admin)
+ * Tabla de fotografias de recojo/entrega de un pedido. El backend
+ * almacena el binario en MySQL (Fase 22), no una URL propia: cada fila
+ * muestra una miniatura que apunta a `GET /pedidos/:id/fotos/:fotoId/imagen`
+ * (`fotoEntregaUrl`). Reutilizada por el "Ver detalle" de Pedidos (Admin)
  * y por el detalle de pedido del panel del Motorizado.
  */
 export function PedidoFotos(fotos: FotoEntrega[]): HTMLElement {
   const columns: DataTableColumn<FotoEntrega>[] = [
     {
-      key: 'urlImagen',
+      key: 'id',
       header: 'Imagen',
-      render: (row) =>
-        el(
+      render: (row) => {
+        const src = fotoEntregaUrl(row);
+        return el(
           'a',
           {
-            href: row.urlImagen,
+            href: src,
             target: '_blank',
             rel: 'noopener noreferrer',
             className: 'block h-14 w-14 overflow-hidden rounded-lg border border-border-default',
           },
           el('img', {
-            src: row.urlImagen,
+            src,
             alt: `Foto de ${TIPO_FOTO_LABEL[row.tipo].toLowerCase()}`,
             className: 'h-full w-full object-cover',
             loading: 'lazy',
           }),
-        ),
+        );
+      },
     },
     { key: 'tipo', header: 'Tipo', render: (row) => Badge({ label: TIPO_FOTO_LABEL[row.tipo] }) },
     {

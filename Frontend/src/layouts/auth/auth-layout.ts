@@ -1,6 +1,6 @@
-import { Moon, Sun } from 'lucide';
 import { Icon } from '../../components/icon/icon';
 import { IconButton } from '../../components/button/icon-button';
+import { THEME_TOGGLE_ICON } from '../../components/navbar/navbar';
 import { Footer } from '../../components/footer/footer';
 import { env } from '../../config/env';
 import { getTheme, onThemeChange, toggleTheme } from '../../utils/theme';
@@ -15,12 +15,12 @@ import type { LayoutHandle } from '../layout.types';
  */
 export function AuthLayout(): LayoutHandle {
   const themeToggle = IconButton({
-    icon: getTheme() === 'dark' ? Sun : Moon,
+    icon: THEME_TOGGLE_ICON[getTheme()],
     label: 'Cambiar tema',
     onClick: () => toggleTheme(),
   });
   onThemeChange((theme) => {
-    const newIcon = Icon({ icon: theme === 'dark' ? Sun : Moon, size: 18 });
+    const newIcon = Icon({ icon: THEME_TOGGLE_ICON[theme], size: 18 });
     themeToggle.firstElementChild?.replaceWith(newIcon);
   });
 

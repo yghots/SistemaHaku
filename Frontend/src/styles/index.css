@@ -12,36 +12,148 @@
 /*
  * Habilita el modo oscuro por clase (en vez de solo prefers-color-scheme):
  * `dark:` se activa cuando <html> (o un ancestro) tiene la clase `dark`.
- * El toggle real vive en src/utils/theme.ts.
+ * `midnight:` es el tercer tema premium (Fase 21) — misma mecanica, clase
+ * `midnight`, mutuamente excluyente con `dark`. `dark-ui:` es un variant
+ * compartido para los pocos ajustes cosmeticos (un tinte de hover, un
+ * override puntual) que deben verse igual en CUALQUIER tema de base oscura
+ * (Dark o Midnight) sin necesidad de declarar el mismo valor dos veces por
+ * separado. El toggle real vive en src/utils/theme.ts.
  */
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant midnight (&:where(.midnight, .midnight *));
+@custom-variant dark-ui (&:where(.dark, .midnight, .dark *, .midnight *));
 
 /*
- * Tokens semanticos de superficie/borde/texto: el VALOR cambia entre claro
- * y oscuro, pero el nombre de la clase de Tailwind usada en los
- * componentes (bg-surface, text-primary, border-default, etc.) es siempre
- * el mismo. Esto evita esparcir `dark:` por todo el codigo para el layout
- * base (fondos, bordes, texto) - los componentes de acento (botones,
- * badges) sí usan `dark:` puntualmente donde el contraste lo requiere.
+ * Tokens semanticos de superficie/borde/texto: el VALOR cambia entre
+ * temas, pero el nombre de la clase de Tailwind usada en los componentes
+ * (bg-surface, text-text-primary, border-border-default, etc.) es siempre
+ * el mismo. Esto evita esparcir `dark:`/`midnight:` por todo el codigo
+ * para el layout base (fondos, bordes, texto) - los componentes de acento
+ * (badges, chips, avatar) consumen los tokens `--soft-*`/`--avatar-*`
+ * definidos mas abajo, tambien agnosticos de tema.
+ *
+ * `--surface-hover`, `--surface-sidebar` y `--surface-navbar` (Fase 21)
+ * son iguales a `--surface-muted`/`--surface-elevated` en Light y Dark
+ * (cero cambio visual en esos dos temas) y solo divergen en Midnight, que
+ * usa una paleta de superficies mas estratificada (fondo/sidebar/navbar/
+ * card/hover, cada una un tono distinto) para lograr la sensacion de
+ * profundidad "premium" pedida.
  */
 :root {
   --surface: #ffffff;
   --surface-elevated: #ffffff;
   --surface-muted: #f8fafc;
+  --surface-hover: #f8fafc;
+  --surface-sidebar: #ffffff;
+  --surface-navbar: #ffffff;
   --border-default: #e2e8f0;
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #94a3b8;
+
+  /* Tonos "suaves" (fondo palido + texto legible) para Badge/StatCard/Avatar/Sidebar activo — unica fuente de estos pares, nunca declarados sueltos en un componente. */
+  --soft-brand-bg: #eff6ff;
+  --soft-brand-fg: #1d4ed8;
+  --soft-success-bg: #f0fdf4;
+  --soft-success-fg: #15803d;
+  --soft-warning-bg: #fffbeb;
+  --soft-warning-fg: #b45309;
+  --soft-danger-bg: #fef2f2;
+  --soft-danger-fg: #b91c1c;
+  --soft-danger-strong-bg: #fee2e2;
+  --soft-danger-strong-fg: #7f1d1d;
+  --soft-info-bg: #f0f9ff;
+  --soft-info-fg: #0369a1;
+
+  --avatar-fallback-bg: #dbeafe;
+  --avatar-fallback-fg: #1d4ed8;
+
+  --tooltip-bg: #0f172a;
+  --tooltip-fg: #ffffff;
+
+  --overlay-scrim: rgb(2 6 23 / 0.5);
 }
 
 .dark {
   --surface: #0b1120;
   --surface-elevated: #111827;
   --surface-muted: #1e293b;
+  --surface-hover: #1e293b;
+  --surface-sidebar: #111827;
+  --surface-navbar: #111827;
   --border-default: #293548;
   --text-primary: #f1f5f9;
   --text-secondary: #cbd5e1;
   --text-muted: #64748b;
+
+  --soft-brand-bg: rgb(59 130 246 / 0.15);
+  --soft-brand-fg: #60a5fa;
+  --soft-success-bg: rgb(34 197 94 / 0.15);
+  --soft-success-fg: #4ade80;
+  --soft-warning-bg: rgb(245 158 11 / 0.15);
+  --soft-warning-fg: #fbbf24;
+  --soft-danger-bg: rgb(239 68 68 / 0.15);
+  --soft-danger-fg: #f87171;
+  --soft-danger-strong-bg: rgb(239 68 68 / 0.28);
+  --soft-danger-strong-fg: #fca5a5;
+  --soft-info-bg: rgb(14 165 233 / 0.15);
+  --soft-info-fg: #38bdf8;
+
+  --avatar-fallback-bg: rgb(59 130 246 / 0.2);
+  --avatar-fallback-fg: #60a5fa;
+
+  --tooltip-bg: #334155;
+  --tooltip-fg: #ffffff;
+
+  --overlay-scrim: rgb(2 6 23 / 0.5);
+}
+
+/*
+ * Midnight (Fase 21): tercer tema premium, inspirado en Linear/Stripe
+ * Dashboard/Raycast/Warp/Arc/Vercel — grises azulados muy oscuros,
+ * profundidad por capas de superficie (nunca por degradados), unico
+ * acento azul institucional (identico al de Light/Dark, nunca redefinido
+ * por tema). Paleta exacta pedida para esta fase; ver FRONTEND_PROGRESS.md.
+ */
+.midnight {
+  --surface: #141923;
+  --surface-elevated: #141923;
+  --surface-muted: #0a0c10;
+  --surface-hover: #1a2030;
+  --surface-sidebar: #0f1117;
+  --surface-navbar: #11151d;
+  --border-default: #242b39;
+  --text-primary: #ffffff;
+  --text-secondary: #a5b0c3;
+  --text-muted: #6b7280;
+
+  --soft-brand-bg: rgb(59 130 246 / 0.15);
+  --soft-brand-fg: #60a5fa;
+  --soft-success-bg: rgb(34 197 94 / 0.15);
+  --soft-success-fg: #4ade80;
+  --soft-warning-bg: rgb(245 158 11 / 0.15);
+  --soft-warning-fg: #fbbf24;
+  --soft-danger-bg: rgb(239 68 68 / 0.15);
+  --soft-danger-fg: #f87171;
+  --soft-danger-strong-bg: rgb(239 68 68 / 0.28);
+  --soft-danger-strong-fg: #fca5a5;
+  --soft-info-bg: rgb(14 165 233 / 0.15);
+  --soft-info-fg: #38bdf8;
+
+  --avatar-fallback-bg: rgb(59 130 246 / 0.2);
+  --avatar-fallback-fg: #60a5fa;
+
+  --tooltip-bg: #1a2030;
+  --tooltip-fg: #ffffff;
+
+  --overlay-scrim: rgb(2 6 23 / 0.6);
+
+  /* Sombras propias, mas marcadas que Light/Dark (un gris oscuro apenas se nota sobre un fondo casi negro): siempre negro puro a baja opacidad, nunca exageradas. */
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 8px rgb(0 0 0 / 0.4), 0 2px 4px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 12px 24px rgb(0 0 0 / 0.45), 0 4px 8px rgb(0 0 0 / 0.3);
+  --shadow-button: 0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(59 130 246 / 0.06);
 }
 
 /*
@@ -55,16 +167,38 @@
 @theme {
   --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  /* Superficies y texto (ver bloques :root/.dark arriba) */
+  /* Superficies y texto (ver bloques :root/.dark/.midnight arriba) */
   --color-surface: var(--surface);
   --color-surface-elevated: var(--surface-elevated);
   --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-sidebar: var(--surface-sidebar);
+  --color-surface-navbar: var(--surface-navbar);
   --color-border-default: var(--border-default);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-muted: var(--text-muted);
 
-  /* Marca (acento unico) */
+  /* Tonos suaves de acento (Badge/StatCard/Avatar/Sidebar activo) — agnosticos de tema, ver bloques :root/.dark/.midnight arriba */
+  --color-soft-brand-bg: var(--soft-brand-bg);
+  --color-soft-brand-fg: var(--soft-brand-fg);
+  --color-soft-success-bg: var(--soft-success-bg);
+  --color-soft-success-fg: var(--soft-success-fg);
+  --color-soft-warning-bg: var(--soft-warning-bg);
+  --color-soft-warning-fg: var(--soft-warning-fg);
+  --color-soft-danger-bg: var(--soft-danger-bg);
+  --color-soft-danger-fg: var(--soft-danger-fg);
+  --color-soft-danger-strong-bg: var(--soft-danger-strong-bg);
+  --color-soft-danger-strong-fg: var(--soft-danger-strong-fg);
+  --color-soft-info-bg: var(--soft-info-bg);
+  --color-soft-info-fg: var(--soft-info-fg);
+  --color-avatar-fallback-bg: var(--avatar-fallback-bg);
+  --color-avatar-fallback-fg: var(--avatar-fallback-fg);
+  --color-tooltip-bg: var(--tooltip-bg);
+  --color-tooltip-fg: var(--tooltip-fg);
+  --color-overlay-scrim: var(--overlay-scrim);
+
+  /* Marca (acento unico, identico en Light/Dark/Midnight) */
   --color-brand-50: #eff6ff;
   --color-brand-100: #dbeafe;
   --color-brand-200: #bfdbfe;
@@ -99,6 +233,7 @@
   --color-danger-500: #ef4444;
   --color-danger-600: #dc2626;
   --color-danger-700: #b91c1c;
+  --color-danger-800: #991b1b;
 
   /* Estados: informativo */
   --color-info-50: #f0f9ff;
@@ -114,11 +249,13 @@
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
 
-  /* Elevaciones: sutiles a proposito ("no sombras excesivas") */
+  /* Elevaciones: sutiles a proposito ("no sombras excesivas"). Midnight sobrescribe estos mismos nombres con sus propios valores (ver bloque .midnight arriba) — Light y Dark comparten esta unica definicion. */
   --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.04);
   --shadow-sm: 0 1px 3px rgb(15 23 42 / 0.06), 0 1px 2px rgb(15 23 42 / 0.04);
   --shadow-md: 0 4px 8px rgb(15 23 42 / 0.06), 0 2px 4px rgb(15 23 42 / 0.04);
   --shadow-lg: 0 12px 24px rgb(15 23 42 / 0.08), 0 4px 8px rgb(15 23 42 / 0.04);
+  /* Sombra de boton (Fase 21): invisible en Light/Dark (botones nunca tuvieron sombra propia), sutil en Midnight — ver override en .midnight arriba. */
+  --shadow-button: none;
 
   /* Duracion/curva unica de transicion para animaciones suaves (hover, sidebar, dropdown, modal, tema) */
   --default-transition-duration: 180ms;
@@ -137,6 +274,8 @@
   #app {
     @apply min-h-screen;
   }
+
+  /* Focus de inputs (Fase 21): mismo ring azul institucional en los 3 temas — en Midnight, sobre superficies casi negras, ese mismo anillo ya se percibe como un "glow" discreto, sin necesidad de una capa adicional. */
 }
 
 /*
@@ -144,12 +283,15 @@
  * propia hoja de estilos). Estas reglas son el unico ajuste necesario para
  * que sus dialogos/toasts respeten el tema activo.
  */
-.dark .swal2-popup {
+.dark .swal2-popup,
+.midnight .swal2-popup {
   background: var(--surface-elevated);
   color: var(--text-primary);
 }
 
 .dark .swal2-title,
-.dark .swal2-html-container {
+.dark .swal2-html-container,
+.midnight .swal2-title,
+.midnight .swal2-html-container {
   color: var(--text-primary);
 }

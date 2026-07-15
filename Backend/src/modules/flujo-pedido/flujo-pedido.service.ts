@@ -32,6 +32,7 @@ export class FlujoPedidoService {
   async confirmarRecojo(
     pedidoId: bigint,
     dto: ConfirmarRecojoDto,
+    foto: Express.Multer.File,
   ): Promise<PedidoResponseDto> {
     const pedido = await this.pedidosService.buscarPorId(pedidoId);
     const motorizado = await this.perfilesMotorizadosService.buscarPorId(
@@ -45,7 +46,8 @@ export class FlujoPedidoService {
       pedidoId,
       motorizadoId: BigInt(dto.motorizadoId),
       usuarioId: BigInt(motorizado.usuarioId),
-      urlImagen: dto.urlImagen,
+      imagen: Uint8Array.from(foto.buffer),
+      mimeType: foto.mimetype,
     });
     return this.pedidosService.buscarPorId(actualizado.id);
   }
@@ -72,6 +74,7 @@ export class FlujoPedidoService {
   async confirmarEntrega(
     pedidoId: bigint,
     dto: ConfirmarEntregaDto,
+    fotos: Express.Multer.File[],
   ): Promise<PedidoResponseDto> {
     const pedido = await this.pedidosService.buscarPorId(pedidoId);
     const motorizado = await this.perfilesMotorizadosService.buscarPorId(
@@ -86,9 +89,10 @@ export class FlujoPedidoService {
       motorizadoId: BigInt(dto.motorizadoId),
       usuarioId: BigInt(motorizado.usuarioId),
       observaciones: dto.observaciones,
-      fotos: dto.fotos.map((foto) => ({
-        urlImagen: foto.urlImagen,
-        esPrincipal: foto.esPrincipal,
+      fotos: fotos.map((foto, index) => ({
+        imagen: Uint8Array.from(foto.buffer),
+        mimeType: foto.mimetype,
+        esPrincipal: index === dto.fotoPrincipalIndex,
       })),
     });
     return this.pedidosService.buscarPorId(actualizado.id);

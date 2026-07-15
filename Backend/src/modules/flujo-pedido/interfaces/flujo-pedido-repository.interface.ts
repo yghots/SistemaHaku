@@ -17,8 +17,13 @@ export const ESTADOS_CANCELABLES: EstadoPedido[] = [
   EstadoPedido.en_ruta,
 ];
 
+// Fase 22: las fotos se reciben como binario (multipart/form-data) y se
+// almacenan directamente en MySQL — `imagen`/`mimeType` reemplazan por
+// completo al antiguo `urlImagen`. `Uint8Array` (no `Buffer`) porque es
+// exactamente el tipo `Bytes` que expone Prisma para un campo LongBlob.
 export interface FotoEntregaInput {
-  urlImagen: string;
+  imagen: Uint8Array<ArrayBuffer>;
+  mimeType: string;
   esPrincipal?: boolean;
 }
 
@@ -26,7 +31,8 @@ export interface ConfirmarRecojoData {
   pedidoId: bigint;
   motorizadoId: bigint;
   usuarioId: bigint;
-  urlImagen: string;
+  imagen: Uint8Array<ArrayBuffer>;
+  mimeType: string;
 }
 
 export interface IniciarRutaData {

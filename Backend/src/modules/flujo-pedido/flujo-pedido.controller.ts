@@ -1,5 +1,26 @@
-import { Body, Controller, Param, ParseIntPipe, Post } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Param,
+  ParseIntPipe,
+  Post,
+  UploadedFile,
+  UploadedFiles,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import {
+  ApiConsumes,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  FOTO_ENTREGA_TAMANIO_MAXIMO_BYTES,
+  validarFotoEntrega,
+  validarFotosEntrega,
+} from '../fotos-entrega/foto-entrega.validator';
 import { PedidoResponseDto } from '../pedidos/dto/pedido-response.dto';
 import { AsignarMotorizadoDto } from './dto/asignar-motorizado.dto';
 import { CancelarPedidoDto } from './dto/cancelar-pedido.dto';
@@ -17,9 +38,10 @@ export class FlujoPedidoController {
   constructor(private readonly flujoPedidoService: FlujoPedidoService) {}
 
   @Post(':id/confirmar-recojo')
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
-      'Confirmar el recojo del pedido (CU08): registra la foto de recojo, pasa a estado recogido y registra el historial',
+      'Confirmar el recojo del pedido (CU08): registra la foto de recojo (multipart/form-data, campo "foto"), pasa a estado recogido y registra el historial',
   })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({
@@ -27,7 +49,11 @@ export class FlujoPedidoController {
     description: 'Recojo confirmado',
     type: PedidoResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Datos de entrada invalidos' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Datos de entrada invalidos, foto faltante o formato de imagen no soportado',
+  })
   @ApiResponse({
     status: 404,
     description: 'Pedido o motorizado no encontrado',
@@ -37,11 +63,18 @@ export class FlujoPedidoController {
     description:
       'El motorizado no coincide con el asignado, o el pedido no esta en estado asignado',
   })
+  @UseInterceptors(
+    FileInterceptor('foto', {
+      limits: { fileSize: FOTO_ENTREGA_TAMANIO_MAXIMO_BYTES },
+    }),
+  )
   confirmarRecojo(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ConfirmarRecojoDto,
+    @UploadedFile() foto: Express.Multer.File,
   ): Promise<PedidoResponseDto> {
-    return this.flujoPedidoService.confirmarRecojo(BigInt(id), dto);
+    validarFotoEntrega(foto);
+    return this.flujoPedidoService.confirmarRecojo(BigInt(id), dto, foto);
   }
 
   @Post(':id/iniciar-ruta')
@@ -73,9 +106,10 @@ export class FlujoPedidoController {
   }
 
   @Post(':id/confirmar-entrega')
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
-      'Confirmar la entrega del pedido (CU10): registra una o varias fotos de entrega, pasa a estado entregado y registra el historial',
+      'Confirmar la entrega del pedido (CU10): registra una o varias fotos de entrega (multipart/form-data, campo "fotos"), pasa a estado entregado y registra el historial',
   })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({
@@ -83,7 +117,11 @@ export class FlujoPedidoController {
     description: 'Entrega confirmada',
     type: PedidoResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Datos de entrada invalidos' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Datos de entrada invalidos, ninguna foto adjunta o formato de imagen no soportado',
+  })
   @ApiResponse({
     status: 404,
     description: 'Pedido o motorizado no encontrado',
@@ -93,11 +131,18 @@ export class FlujoPedidoController {
     description:
       'El motorizado no coincide con el asignado, o el pedido no esta en estado en_ruta',
   })
+  @UseInterceptors(
+    FilesInterceptor('fotos', undefined, {
+      limits: { fileSize: FOTO_ENTREGA_TAMANIO_MAXIMO_BYTES },
+    }),
+  )
   confirmarEntrega(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ConfirmarEntregaDto,
+    @UploadedFiles() fotos: Express.Multer.File[],
   ): Promise<PedidoResponseDto> {
-    return this.flujoPedidoService.confirmarEntrega(BigInt(id), dto);
+    validarFotosEntrega(fotos);
+    return this.flujoPedidoService.confirmarEntrega(BigInt(id), dto, fotos);
   }
 
   @Post(':id/asignar-motorizado')

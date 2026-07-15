@@ -4,9 +4,9 @@
  * fuente antes de escribir estos tipos: create-pedido.dto.ts,
  * update-pedido.dto.ts, pedido-response.dto.ts, list-pedidos-query.dto.ts,
  * y los DTOs de flujo-pedido: asignar/reasignar-motorizado,
- * confirmar-recojo/entrega, iniciar-ruta, registrar-cliente-ausente/
- * rechazo, cancelar-pedido, foto-entrega-input; y el enum `EstadoPedido`
- * de prisma/schema.prisma).
+ * confirmar-recojo/entrega (Fase 22: multipart/form-data, ya no JSON con
+ * URLs), iniciar-ruta, registrar-cliente-ausente/rechazo, cancelar-pedido;
+ * y el enum `EstadoPedido` de prisma/schema.prisma).
  *
  * `sucursalId`, `clienteId` y `creadoPorId` son inmutables tras la
  * creacion (el backend los excluye explicitamente de UpdatePedidoDto via
@@ -120,10 +120,16 @@ export interface CancelarPedidoPayload {
   usuarioId: number;
 }
 
-/** Igual a ConfirmarRecojoDto. `urlImagen` es una URL de texto: el backend no acepta archivos, solo URLs ya almacenadas. */
+/**
+ * Igual a ConfirmarRecojoDto (Fase 22/23): la foto se envia como archivo
+ * (multipart/form-data, campo "foto"), ya optimizada en el cliente
+ * (`utils/optimizar-foto.ts` — redimensionada, convertida a WebP,
+ * comprimida) antes de llegar aqui. `PedidosService.confirmarRecojo`
+ * arma el `FormData`, nunca el llamador.
+ */
 export interface ConfirmarRecojoPayload {
   motorizadoId: number;
-  urlImagen: string;
+  foto: File;
 }
 
 /** Igual a IniciarRutaDto. */
@@ -131,16 +137,17 @@ export interface IniciarRutaPayload {
   motorizadoId: number;
 }
 
-/** Igual a FotoEntregaInputDto. */
-export interface FotoEntregaInput {
-  urlImagen: string;
-  esPrincipal?: boolean;
-}
-
-/** Igual a ConfirmarEntregaDto: exige al menos una foto. */
+/**
+ * Igual a ConfirmarEntregaDto (Fase 22/23): las fotos se envian como
+ * archivos (multipart/form-data, campo "fotos"), ya optimizadas en el
+ * cliente. `fotoPrincipalIndex` (0-based, dentro del arreglo `fotos`)
+ * reemplaza al antiguo `esPrincipal` por foto — el backend acepta un
+ * unico indice, no un booleano por archivo.
+ */
 export interface ConfirmarEntregaPayload {
   motorizadoId: number;
-  fotos: FotoEntregaInput[];
+  fotos: File[];
+  fotoPrincipalIndex?: number;
   observaciones?: string;
 }
 

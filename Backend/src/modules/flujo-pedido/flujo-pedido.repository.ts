@@ -47,7 +47,8 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
           pedidoId: data.pedidoId,
           motorizadoId: data.motorizadoId,
           tipo: TipoFoto.recojo,
-          urlImagen: data.urlImagen,
+          imagen: data.imagen,
+          mimeType: data.mimeType,
           esPrincipal: true,
         },
       });
@@ -105,7 +106,8 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
             pedidoId: data.pedidoId,
             motorizadoId: data.motorizadoId,
             tipo: TipoFoto.entrega,
-            urlImagen: foto.urlImagen,
+            imagen: foto.imagen,
+            mimeType: foto.mimeType,
             esPrincipal: foto.esPrincipal ?? false,
           })),
         });

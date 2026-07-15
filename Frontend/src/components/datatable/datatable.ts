@@ -59,7 +59,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLDivElement {
   const table = el(
     'table',
     { className: 'w-full min-w-full divide-y divide-border-default text-sm' },
-    el('thead', { className: 'bg-surface-muted' }, headerRow),
+    el('thead', { className: 'bg-surface-hover' }, headerRow),
   );
 
   if (props.error) {
@@ -108,7 +108,7 @@ export function DataTable<T>(props: DataTableProps<T>): HTMLDivElement {
     el(
       'tr',
       {
-        className: 'transition-colors hover:bg-surface-muted',
+        className: 'transition-colors hover:bg-surface-hover',
         dataset: { rowKey: props.getRowKey(row) },
       },
       ...props.columns.map((column) => {
@@ -166,7 +166,7 @@ function buildCard<T>(row: T, columns: DataTableColumn<T>[], rowKey: string): HT
     'div',
     {
       className:
-        'flex flex-col gap-2 rounded-lg border border-border-default p-4 transition-colors hover:bg-surface-muted',
+        'flex flex-col gap-2 rounded-lg border border-border-default p-4 transition-colors hover:bg-surface-hover',
       dataset: { rowKey },
     },
     el(

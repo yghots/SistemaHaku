@@ -320,13 +320,12 @@ function buildQuickAccess(): HTMLElement {
           href: item.href,
           'data-link': 'true',
           className:
-            'flex flex-col items-center gap-2 rounded-xl border border-border-default bg-surface-elevated p-4 text-center transition-colors hover:bg-surface-muted',
+            'flex flex-col items-center gap-2 rounded-xl border border-border-default bg-surface-elevated p-4 text-center transition-colors hover:bg-surface-hover',
         },
         el(
           'span',
           {
-            className:
-              'rounded-lg bg-brand-50 p-2 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400',
+            className: 'rounded-lg bg-soft-brand-bg p-2 text-soft-brand-fg',
           },
           Icon({ icon: item.icon, size: 18 }),
         ),
