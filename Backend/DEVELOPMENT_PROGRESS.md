@@ -2744,3 +2744,53 @@ Contra el servidor real: sin filtro (13 usuarios, todos los roles), `rol=adminis
 ### Archivos modificados
 
 `dto/list-usuarios-query.dto.ts`, `interfaces/usuarios-repository.interface.ts`, `usuarios.repository.ts`, `usuarios.service.ts`. **No se tocó**: `usuarios.controller.ts`, ningún otro módulo, ni la arquitectura existente.
+
+## Fase 24 — Estandarización de plantillas de Importación (proyecto Fase 26)
+
+Estandarización de las 9 plantillas descargables (Clientes/Tiendas/Motorizados × xlsx/json/xml), sin tocar el flujo de importación, la base de datos, ni los DTOs públicos (`Cliente`, `Usuario`, `PerfilMotorizado` intactos).
+
+### Regla 1 — Plantillas vacías
+
+Las 3 plantillas `.xlsx` traían 2 filas de ejemplo con datos ficticios (`"Juan Perez Garcia"`, `"carlos.rojas"`, etc.) — se regeneraron con **cero** filas de datos (solo encabezado). `.json` pasó de un arreglo con 2 objetos de ejemplo a `[]`; `.xml` pasó de 2 `<registro>` con datos a `<registros/>` vacío. Decisión explícita: no se agregó ningún objeto/registro "de referencia" con valores vacíos en json/xml (seguiría siendo una fila precargada) — la única fuente de nombres de campo para esos 2 formatos es, como ya era antes de esta fase, la plantilla `.xlsx` (única con hoja de instrucciones, ver Regla 4).
+
+### Regla 2 — Personas: `nombres`/`apellidos`
+
+**Solo aplica a Clientes** (única entidad importable que persiste un nombre de persona con campo propio). La plantilla y el archivo de origen ahora traen `nombres`/`apellidos` en vez de `nombreCompleto`. `ClientesImportador.procesarFila` concatena `[fila.nombres, fila.apellidos].filter(Boolean).join(' ')` **antes** de validar contra `CreateClienteDto` (sin tocar ese DTO ni la columna `nombre_completo`) — el resto de la validación, detección de duplicados (por `documentoIdentidad`) y creación es exactamente el mismo código de antes de esta fase.
+
+Motorizados **no tiene** un campo de nombre en su plantilla: el importador vincula un perfil a una cuenta de `Usuario` ya existente por su `usuario` (login) — el nombre de esa persona vive en `Usuario`, fuera del alcance explícito de esta fase ("no cambiar el modelo Usuario"). No había nada que separar ahí.
+
+### Regla 3 — Entidades no personales
+
+Tiendas mantiene su estructura (`nombre`, `ruc`) sin cambios — solo se le aplicó el nuevo estándar visual/de contenido (Reglas 1, 4, 5).
+
+### Regla 4 — Hoja de Instrucciones
+
+Cada plantilla `.xlsx` ahora tiene 2 hojas: `Plantilla` (encabezados) e `Instrucciones` (nueva). La hoja de Instrucciones incluye, para las 3 entidades: las 7 reglas generales pedidas (no modificar encabezados, no eliminar columnas, no cambiar el orden, una fila = un registro, duplicados se omiten automáticamente, reporte de rechazados descargable, no dejar filas vacías entre registros) + una tabla de campos con su descripción y si son obligatorios/opcionales + la regla de duplicados específica de esa entidad (mismo texto ya usado por `InstruccionesModal` del Frontend, Fase 19) + una nota adicional para Motorizados (la cuenta de usuario debe existir previamente).
+
+### Regla 5 — Diseño uniforme
+
+Las 3 plantillas comparten: mismo nombre de hojas (`Plantilla`/`Instrucciones`), mismo color de encabezado (azul `#2563EB`, texto blanco negrita), mismo borde delgado gris en las celdas de encabezado, y el mismo algoritmo de ancho de columna (`longitud del encabezado + 6, mínimo 14`) — no un ancho idéntico entre columnas de contenido distinto (eso se vería roto), sino la misma **regla** de cálculo aplicada a las 3 plantillas por igual.
+
+### Backend: cambios de código (mínimos, solo lectura/mapeo)
+
+- `importadores/clientes.importador.ts`: `columnas` actualizado a `['nombres', 'apellidos', 'telefono', 'direccion', 'documentoIdentidad']`; `procesarFila` concatena antes de validar. Es el **único** archivo `.ts` modificado — `tiendas.importador.ts` y `motorizados.importador.ts` no se tocaron (Regla 3).
+- 9 archivos de `modules/importaciones/plantillas/` regenerados (assets estáticos, no código de aplicación) con un script puntual (`exceljs`, ya dependencia existente), ejecutado una sola vez y luego eliminado del repositorio — mismo patrón ya usado para el backfill de `codigoPedido` (Fase 21.1/proyecto 24).
+
+### Compatibilidad mantenida
+
+Mismos endpoints (`GET .../plantilla`, `POST .../analizar`, `POST .../confirmar`), mismo contrato HTTP, mismas respuestas, mismos DTOs públicos. Un archivo de importación de Clientes con el **formato viejo** (columna `nombreCompleto`) ahora fallaría — es un cambio de contrato de **archivo de entrada**, no de API; el proyecto no está en producción y no existen integraciones externas que dependan del formato anterior (mismo criterio ya aprobado en la Fase 24 para los datos existentes).
+
+### Pruebas realizadas
+
+- **Descarga de las 9 plantillas** vía HTTP real: las 3 `.xlsx` traen exactamente 2 hojas (`Plantilla`, `Instrucciones`) y 0 filas de datos; las 3 `.json` devuelven `[]`; las 3 `.xml` devuelven `<registros/>` vacío.
+- **Importación real con el nuevo formato**: `analizar` y `confirmar` con un archivo de 3 filas (`nombres`/`apellidos`) — 1 fila importada, 1 duplicada (mismo `documentoIdentidad`, detectada correctamente en `confirmar` porque el procesamiento es secuencial), 1 inválida (`nombres`/`apellidos` vacíos → `nombreCompleto` vacío → rechazada por la validación ya existente de `CreateClienteDto`, sin ninguna regla nueva). Verificado en la base de datos que el cliente creado quedó con `nombre_completo = "Ana Torres Vega"`.
+- **Reporte de errores**: regenerado sin regresión para la importación de prueba (mismas 2 filas rechazadas, mismos campos/motivos).
+- `prisma validate` ✓, `prisma generate` ✓, `tsc --noEmit` ✓, `eslint` ✓, `npm run build` ✓ (incluye copia de los assets de plantillas a `dist/`, confirmada con los tamaños de archivo correctos tras un build limpio).
+
+### Archivos modificados
+
+`importadores/clientes.importador.ts`, los 9 archivos en `plantillas/`, `ARCHITECTURE.md` (§8). **No se tocó**: `tiendas.importador.ts`, `motorizados.importador.ts`, `importaciones.service.ts`, `importaciones.controller.ts`, ningún DTO público, ni el schema de Prisma.
+
+### Problemas encontrados
+
+Uno, transitorio y ya resuelto: al regenerar las plantillas con el servidor corriendo en modo `watch` (`nest start --watch`, que copia assets automáticamente vía `watchAssets`), 2 de los 3 `.xlsx` quedaron en `dist/` con 0 bytes por una condición de carrera entre la escritura del archivo y la copia del watcher. Se corrigió copiando manualmente los archivos correctos a `dist/` y se confirmó que un `npm run build` limpio (sin watch mode corriendo en paralelo) copia los 3 archivos con su tamaño correcto — no es un problema del código de la aplicación, solo de la secuencia de esta regeneración puntual en modo desarrollo.

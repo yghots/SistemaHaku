@@ -1,12 +1,1 @@
-[
-  {
-    "usuario": "carlos.rojas",
-    "placa": "ABC-123",
-    "estado": "disponible"
-  },
-  {
-    "usuario": "miguel.torres",
-    "placa": "XYZ-789",
-    "estado": "disponible"
-  }
-]
+[]

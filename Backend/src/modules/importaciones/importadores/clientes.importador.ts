@@ -13,11 +13,20 @@ import { validarFila } from './validar-fila.util';
  * `existeDocumentoDuplicado` (mismas reglas de negocio ya implementadas,
  * ninguna nueva). Vive fuera del modulo `clientes` — el Centro de
  * Importaciones es el unico punto de entrada de esta logica.
+ *
+ * Fase 26: la plantilla y el archivo de origen separan `nombres`/`apellidos`
+ * (estandar de plantillas de personas) en vez de un unico `nombreCompleto` —
+ * pero `CreateClienteDto` (y por lo tanto la columna real en la base de
+ * datos) no cambia. Este importador concatena ambos campos en
+ * `nombreCompleto` antes de validar, exactamente como si el archivo trajera
+ * ese unico campo — el resto del proceso (validacion, deteccion de
+ * duplicados, creacion) es identico a como era antes de esta fase.
  */
 @Injectable()
 export class ClientesImportador implements IEntidadImportador {
   readonly columnas = [
-    'nombreCompleto',
+    'nombres',
+    'apellidos',
     'telefono',
     'direccion',
     'documentoIdentidad',
@@ -29,8 +38,11 @@ export class ClientesImportador implements IEntidadImportador {
     fila: Record<string, string>,
     dryRun: boolean,
   ): Promise<ResultadoFilaImportador> {
+    const nombreCompleto = [fila.nombres, fila.apellidos]
+      .filter(Boolean)
+      .join(' ');
     const { dto, campo, motivo, valor } = await validarFila(CreateClienteDto, {
-      nombreCompleto: fila.nombreCompleto,
+      nombreCompleto,
       telefono: fila.telefono,
       direccion: fila.direccion,
       documentoIdentidad: fila.documentoIdentidad || undefined,

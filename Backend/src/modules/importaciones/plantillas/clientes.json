@@ -1,14 +1,1 @@
-[
-  {
-    "nombreCompleto": "Juan Perez Garcia",
-    "telefono": "987654321",
-    "direccion": "Av. Los Pinos 123, San Isidro",
-    "documentoIdentidad": "45678912"
-  },
-  {
-    "nombreCompleto": "Maria Lopez Torres",
-    "telefono": "912345678",
-    "direccion": "Jr. Las Flores 456, Miraflores",
-    "documentoIdentidad": ""
-  }
-]
+[]

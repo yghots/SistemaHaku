@@ -17,8 +17,8 @@ export const ENTIDADES_IMPORTACION_CONFIG: EntidadImportacionConfig[] = [
     entidad: 'cliente',
     nombre: 'Clientes',
     descripcion:
-      'Importa clientes en lote: nombre completo, telefono, direccion y documento de identidad.',
-    camposObligatorios: ['nombreCompleto', 'telefono', 'direccion'],
+      'Importa clientes en lote: nombres, apellidos, telefono, direccion y documento de identidad.',
+    camposObligatorios: ['nombres', 'apellidos', 'telefono', 'direccion'],
     camposOpcionales: ['documentoIdentidad'],
     reglaDuplicados:
       'El documento de identidad, cuando se proporciona (dos clientes sin documento no se consideran duplicados entre si).',

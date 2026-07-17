@@ -2184,3 +2184,13 @@ Nuevo `Select` de rol en la página de Usuarios (`pages/admin/usuarios/usuarios.
 **Archivos modificados**: `pages/admin/usuarios/usuarios.page.ts` (opciones + campo de filtro), `types/usuario.ts` (`rol?: UserRole` en `ListUsuariosParams`). `usuarios.service.ts` no necesitó cambios (ya reenvía `params` genéricamente).
 
 **Pruebas**: `tsc --noEmit`, `eslint .`, `prettier --check .`, `npm run build` sin errores. Verificado contra el backend real (ver `DEVELOPMENT_PROGRESS.md`, Fase 23/proyecto 25): todos los roles, solo administradores, solo motorizados, usuario+rol, correo+rol, usuario+correo+rol, rol inválido rechazado, paginación con filtro persistente entre páginas.
+
+## Fase 26 — Estandarización de plantillas de Importación (verificación Frontend)
+
+El Backend (ver `DEVELOPMENT_PROGRESS.md`, Fase 24/proyecto 26) estandarizó las 9 plantillas descargables y cambió el formato de importación de Clientes (`nombreCompleto` → `nombres`/`apellidos`). Esta fase en el Frontend fue de **consistencia**: el modal `InstruccionesModal` (ya existente, Fase 19) muestra en la app los campos obligatorios/opcionales de cada entidad **antes** de descargar la plantilla — si no se actualizaba, le diría al usuario "nombreCompleto" mientras la plantilla real ya pedía "nombres"/"apellidos".
+
+**Corrección**: `entidad-importacion.config.ts` — `camposObligatorios` de Clientes pasa de `['nombreCompleto', 'telefono', 'direccion']` a `['nombres', 'apellidos', 'telefono', 'direccion']`, y la `descripcion` se actualiza al mismo vocabulario. Tiendas y Motorizados no cambiaron (sus campos no se modificaron, Regla 3 de la fase).
+
+**Archivo modificado**: únicamente `pages/admin/importaciones/entidad-importacion.config.ts`. `instrucciones-modal.ts` no necesitó cambios (ya renderiza `camposObligatorios`/`camposOpcionales` genéricamente desde la config).
+
+**Pruebas**: `tsc --noEmit`, `eslint .`, `prettier --check .`, `npm run build` sin errores. Descarga de las 9 plantillas e importación real con el nuevo formato verificadas contra el backend (ver `DEVELOPMENT_PROGRESS.md`).

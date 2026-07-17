@@ -1,15 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <importacion>
-  <registros>
-    <registro>
-      <usuario>carlos.rojas</usuario>
-      <placa>ABC-123</placa>
-      <estado>disponible</estado>
-    </registro>
-    <registro>
-      <usuario>miguel.torres</usuario>
-      <placa>XYZ-789</placa>
-      <estado>disponible</estado>
-    </registro>
-  </registros>
+  <registros/>
 </importacion>
