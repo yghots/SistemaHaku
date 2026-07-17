@@ -44,6 +44,7 @@ export class UsuariosRepository implements IUsuariosRepository {
       deletedAt: null,
       ...(params.usuario ? { usuario: { contains: params.usuario } } : {}),
       ...(params.correo ? { correo: { contains: params.correo } } : {}),
+      ...(params.rol ? { rol: params.rol } : {}),
     };
 
     const [data, total] = await Promise.all([

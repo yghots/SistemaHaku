@@ -63,6 +63,18 @@ export class PedidoResponseDto {
 
   @ApiProperty({
     description:
+      'Total del pedido (valorProducto + costoEnvio), calculado a partir del pedido (Fase 21.1) — nunca almacenado',
+  })
+  totalPedido: string;
+
+  @ApiProperty({
+    description:
+      'Total pagado, calculado a partir de los pagos registrados (Fase 21.1) — nunca almacenado',
+  })
+  totalPagado: string;
+
+  @ApiProperty({
+    description:
       'Saldo pendiente de pago, calculado a partir de los pagos registrados (Fase 21)',
   })
   saldoPendiente: string;

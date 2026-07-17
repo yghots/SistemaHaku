@@ -341,7 +341,12 @@ El módulo Usuarios (`src/pages/admin/usuarios/`) es la **implementación de ref
 - **Librerías pesadas usadas por un único flujo (no toda la app) se importan de forma perezosa** (`await import(...)` dentro de la función que las usa, nunca en el top-level del módulo) — `optimizar-foto.ts` es el primer caso; Rollup la separa en su propio chunk, evitando que paneles que nunca capturan fotos (Admin, Reportes, Dashboard) paguen ese peso.
 - **Envío de fotografías: siempre `multipart/form-data`** (el servicio arma el `FormData` internamente, igual que `importaciones.service.ts`, Fase 19) — nunca Base64, nunca JSON con la imagen embebida.
 
-## 32. Referencias
+## 32. Identificador visible de un pedido: siempre `codigoPedido`, nunca el `id` interno (Fase 24)
+
+- **Ninguna pantalla debe mostrar el `id` interno de un pedido como su identificador visible** — el `id` es autoincremental y solo debe usarse para navegación, relaciones y llamadas a la API. El identificador de negocio que el usuario ve siempre es `codigoPedido` (formato `PED-AAAA-NNNNNN`, generado por el Backend — `PedidoCodigoGenerator` — nunca en el Frontend).
+- Cuando otra entidad solo tiene el `pedidoId` (ej. un incidente), resolverlo a `codigoPedido` con el mismo patrón ya usado para `motorizadoLabel`/`clienteLabel` en el proyecto: un mapa `id → codigoPedido` poblado con `PedidosService.listar(...)`, nunca mostrar el id crudo ni concatenarlo a mano (`#${id}`).
+
+## 33. Referencias
 
 - `Backend/API_OVERVIEW.md` — endpoints, casos de uso, flujo del negocio.
 - `Backend/ARCHITECTURE.md` — arquitectura y decisiones técnicas del backend.

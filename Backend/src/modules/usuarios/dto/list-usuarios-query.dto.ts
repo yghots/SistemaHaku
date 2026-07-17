@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { RolUsuario } from '@prisma/client';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
 export class ListUsuariosQueryDto extends PaginationQueryDto {
@@ -16,4 +17,12 @@ export class ListUsuariosQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   correo?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtra por rol del usuario (Fase 25)',
+    enum: RolUsuario,
+  })
+  @IsOptional()
+  @IsEnum(RolUsuario)
+  rol?: RolUsuario;
 }

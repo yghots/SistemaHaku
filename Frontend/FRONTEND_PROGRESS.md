@@ -2124,3 +2124,63 @@ Ningún módulo fuera del flujo de fotografías fue tocado (Pedidos, Clientes, T
 ### Problemas encontrados
 
 Ninguno bloqueante.
+
+## Bugfix — Content-Type incorrecto en subidas multipart/form-data (post Fase 22)
+
+**Síntoma**: al confirmar recojo/entrega (celular y PC por igual), el backend respondía 400 con `"property foto should not exist"` (o `"property fotos should not exist"`).
+
+**Causa raíz**: `httpClient` (`services/http/http-client.ts`) fija `Content-Type: application/json` como header por defecto de la instancia. Cuando el body es un `FormData` (fotos), axios respeta ese header explícito y, en vez de dejar que el navegador genere el `Content-Type: multipart/form-data; boundary=...` real, serializa el `FormData` completo como JSON plano (`formDataToJSON`). El backend recibía entonces un body JSON con una propiedad `foto`/`fotos` que ningún DTO declara — el `ValidationPipe` global (`whitelist: true, forbidNonWhitelisted: true`) la rechazaba correctamente. El contrato del Backend (Fase 22) era correcto desde el inicio; el bug era 100% de transporte en el Frontend.
+
+**Archivo modificado**: `src/services/http/http-client.ts` — en el interceptor de request ya existente (el mismo que agrega el `Authorization`), se agregó: si `config.data instanceof FormData`, se elimina el header `Content-Type` antes de enviar la petición, para que el navegador le asigne el `multipart/form-data; boundary=...` correcto. Ningún otro archivo se tocó (Backend, DTOs, `ValidationPipe`, interceptors del controller: intactos).
+
+**Por qué no se detectó en la Fase 22**: la verificación end-to-end de esa fase usó `fetch`/`FormData` nativos de Node directamente (sin pasar por axios) para simular el contrato — eso evitaba accidentalmente el bug, porque `fetch` sí genera el `Content-Type` correcto sin que nada lo pise. El bug solo se manifestaba al pasar por la instancia real de `httpClient`.
+
+**Pruebas realizadas**: reproducción del error exacto contra el backend real usando la misma instancia de axios con la config original (confirmado: `Content-Type: application/json` enviado, 400 `property foto should not exist`); aplicado el fix, misma prueba ahora sale con `Content-Type: multipart/form-data; boundary=...` real. Flujo completo verificado end-to-end contra un pedido real en estado `asignado`: confirmar recojo (1 foto) → 201 `recogido` → iniciar ruta → 201 `en_ruta` → confirmar entrega (2 fotos + `fotoPrincipalIndex=1` + observaciones) → 201 `entregado`, y `GET /pedidos/:id/fotos` confirma las 3 fotos con el `esPrincipal` correcto. `tsc --noEmit`, `eslint`, `prettier --check` y `npm run build` sin errores.
+
+**Efecto colateral positivo**: el mismo fix, al estar centralizado en el cliente HTTP único, también corrige el mismo riesgo latente en `ImportacionesService` (Fase 19), que arma `FormData` de la misma manera y no había sido probado contra la instancia real de axios con archivos.
+
+## Mejora — Reemplazo de "Saldo" por desglose económico en Pedidos
+
+Antes de tocar código se verificó el Backend: `PedidoResponseDto` ya calculaba `totalPedido`/`totalPagado` internamente (`PedidosService.resumenPagoDeMuchos`, una sola consulta agregada, reutilizada por listado y detalle) pero solo exponía `saldoPendiente`/`estadoPago` — se agregaron esos 2 campos ya calculados al DTO (Backend, Fase 21.1: `pedido-response.dto.ts` + `pedidos.mapper.ts`), sin ninguna consulta ni lógica nueva, y sin quitar `saldoPendiente` (compatibilidad de API intacta).
+
+**Tabla de Pedidos** (`pedidos.page.ts`): la columna `saldoPendiente`/"Saldo" se reemplazó por tres columnas en el mismo lugar, mismo estilo: "Total del pedido" (`row.totalPedido`), "Total pagado" (`row.totalPagado`), "Pendiente" (`row.saldoPendiente`, mismo campo de antes, solo re-etiquetado). Filtros, paginación, búsqueda y acciones sin cambios.
+
+**Modal "Detalle de pedido"**: se integraron los 3 campos en la información general (justo después de "Costo de envío", que se mantiene intacto en su lugar, sin mezclarse) en vez de crear una sección nueva — la fila ya llega desde la tabla con `totalPedido`/`totalPagado`/`saldoPendiente` (mismo `Pedido` que alimenta el resto del detalle), así que no hace falta ninguna llamada adicional. Se dejó sin tocar la sección "Pagos" del mismo modal (`pedido-pagos.ts`), que ya mostraba un desglose equivalente (`Total del pedido`/`Total pagado`/`Saldo pendiente`) ligado a la tabla de pagos — tocarla no era necesario y se prefirió no duplicar cambios donde ya existía la información correcta.
+
+**Archivos modificados**: `types/pedido.ts` (2 campos nuevos en `Pedido`), `pedidos.page.ts` (columnas + detalle). Ningún otro archivo — Reportes usa su propio tipo/columna de "Saldo" (`reporte-pedido-columns.ts`/`types/reporte.ts`), fuera de alcance, sin tocar.
+
+**Pruebas**: `tsc --noEmit`, `eslint .`, `prettier --check .`, `npm run build` — sin errores. Verificado contra el backend real: `GET /pedidos` y `GET /pedidos/:id` devuelven los 3 campos consistentes (`totalPedido - totalPagado = saldoPendiente`).
+
+## Mejora — Vista previa moderna de fotografías en el detalle de pedido
+
+`PedidoFotos` (`pages/admin/pedidos/pedido-fotos.ts`) — componente único reutilizado por Admin (Pedidos) y Rider (Mis Pedidos, Historial) — reemplaza el enlace `<a target="_blank">` por una miniatura clickeable (mismo tamaño/bordes/borde ya existentes, se agrega `shadow-sm` y `hover:scale-105`/`hover:shadow-md`) que abre una vista previa grande **dentro de la aplicación**, reutilizando el `Modal` genérico tal cual (X, click afuera y Escape ya los resuelve el propio componente, cero código nuevo de cierre). La imagen de la vista previa usa `object-contain` (nunca recorta, mantiene proporción); la miniatura sigue usando `object-cover` (recorte cuadrado, ya existente).
+
+**Placeholder de imagen faltante**: si el `<img>` de la miniatura dispara `error` (foto eliminada, fallo de red), se oculta y se reemplaza por un ícono `ImageOff` + "Sin imagen", y el botón deja de ser clickeable/hover (evita abrir una vista previa vacía).
+
+**Archivo modificado**: únicamente `pedido-fotos.ts`. Ningún endpoint, tipo ni otro componente tocado — el `Modal` genérico no se modificó (ya soportaba todo lo pedido).
+
+**Pruebas**: `tsc --noEmit`, `eslint .`, `prettier --check .`, `npm run build` sin errores. No hay herramienta de automatización de navegador en este entorno — la interacción real (hover, animación, tap en móvil) no se ejecutó interactivamente por mí; el `Modal` reutilizado ya estaba validado en fases anteriores.
+
+## Fase 24 — Código de negocio profesional para Pedidos (verificación de pantallas)
+
+El Backend (Fase 24 backend, ver `DEVELOPMENT_PROGRESS.md`) reemplazó la generación de `codigoPedido` (ahora `PED-AAAA-NNNNNN`) sin tocar el contrato — sigue siendo el mismo campo `string`, así que ningún tipo ni servicio del Frontend necesitó cambios de forma. Esta fase fue de **auditoría**: revisar que ninguna pantalla muestre el `id` interno del pedido como identificador visible.
+
+**Resultado de la auditoría**: Pedidos, Mis pedidos, Historial, Dashboard (Admin y Rider), Reportes y Exportaciones ya usaban `codigoPedido` correctamente — nada que cambiar ahí. **Una excepción encontrada**: `pages/admin/incidentes/incidentes.page.ts` mostraba el `pedidoId` interno crudo (`#123`) tanto en la columna "Pedido" de la tabla como en el modal de detalle, en vez del código del pedido asociado.
+
+**Corrección**: se agregó `pedidoCodigoById` (mapa `id → codigoPedido`, poblado con `PedidosService.listar({page:1, limit:100})`) y una función `pedidoCodigo(pedidoId)`, exactamente el mismo patrón ya usado en ese archivo para `motorizadoLabel` — sin introducir ninguna abstracción nueva. `SIN_VALOR_LABEL` se sigue usando para el caso de incidente sin pedido asociado.
+
+**Archivo modificado**: únicamente `pages/admin/incidentes/incidentes.page.ts`. Ningún tipo, servicio ni otra pantalla requirió cambios.
+
+**Pruebas**: `tsc --noEmit`, `eslint .`, `prettier --check .`, `npm run build` sin errores. Verificado contra el backend real: pedidos existentes y uno nuevo (`PED-2026-000042`) se listan/buscan correctamente por código en Pedidos, Reportes y Exportaciones.
+
+## Fase 25 — Filtro por rol en Usuarios
+
+Nuevo `Select` de rol en la página de Usuarios (`pages/admin/usuarios/usuarios.page.ts`), agregado al arreglo `filterFields` de `ResourceTable` ya existente — **cero componentes nuevos**: `Select`/`SearchBar`/`DataTable`/`Pagination` son exactamente los mismos que ya usa el resto del sistema (Pedidos, Reportes, Clientes), y `ResourceTable` ya soportaba `type: 'select'` (usado por `estado` en Pedidos e `incidentes.page.ts`) — solo se configuró un campo más, sin tocar la infraestructura.
+
+- **Opciones**: `ROL_OPTIONS`, derivadas de `ROL_USUARIO_LABEL` ya existente (`Object.entries`, mismo patrón que `ESTADO_OPTIONS` en `pedidos.page.ts`) — "Todos los roles" (placeholder/opción vacía, agregada automáticamente por `ResourceTable`), "Administrador", "Motorizado".
+- **Combinación con los demás filtros, reinicio de página y persistencia**: nada de esto se implementó a mano — es el comportamiento que `ResourceTable.applyFilter` ya provee para **todo** filtro registrado (guarda el valor en el objeto `filters` interno, reinicia `page = 1` en cualquier cambio, y lo reenvía en cada `fetchPage`, incluida la paginación). Agregar el campo de rol lo hereda gratis, igual que cualquier otro filtro del sistema.
+- **"Limpiar"**: no existe (ni existía antes) un botón único de "limpiar todos los filtros" en ningún listado del proyecto — cada filtro se limpia individualmente (la "X" del `SearchBar`, o eligiendo "Todos los roles" en el `Select`), y ambos ya disparan `applyFilter(name, '')`, que reinicia la página a 1. Se mantuvo ese mismo patrón, sin inventar un botón nuevo que no existe en Pedidos/Clientes/Reportes.
+
+**Archivos modificados**: `pages/admin/usuarios/usuarios.page.ts` (opciones + campo de filtro), `types/usuario.ts` (`rol?: UserRole` en `ListUsuariosParams`). `usuarios.service.ts` no necesitó cambios (ya reenvía `params` genéricamente).
+
+**Pruebas**: `tsc --noEmit`, `eslint .`, `prettier --check .`, `npm run build` sin errores. Verificado contra el backend real (ver `DEVELOPMENT_PROGRESS.md`, Fase 23/proyecto 25): todos los roles, solo administradores, solo motorizados, usuario+rol, correo+rol, usuario+correo+rol, rol inválido rechazado, paginación con filtro persistente entre páginas.

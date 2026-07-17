@@ -25,6 +25,7 @@ export interface BuscarUsuariosParams {
   take: number;
   usuario?: string;
   correo?: string;
+  rol?: Usuario['rol'];
 }
 
 export interface IUsuariosRepository {

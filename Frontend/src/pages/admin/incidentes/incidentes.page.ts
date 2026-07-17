@@ -12,6 +12,7 @@ import {
 } from '../../../components/resource-table/resource-table';
 import { IncidentesService } from '../../../services/incidentes.service';
 import { MotorizadosService } from '../../../services/motorizados.service';
+import { PedidosService } from '../../../services/pedidos.service';
 import type { Incidente, TipoIncidente } from '../../../types/incidente';
 import { el } from '../../../utils/dom';
 import { SIN_VALOR_LABEL } from '../../../utils/format-optional';
@@ -32,9 +33,17 @@ const TIPO_INCIDENTE_LABEL: Record<TipoIncidente, string> = {
  */
 export function IncidentesPage(): HTMLElement {
   let motorizadoLabelById = new Map<string, string>();
+  let pedidoCodigoById = new Map<string, string>();
 
   function motorizadoLabel(motorizadoId: string): string {
     return motorizadoLabelById.get(motorizadoId) ?? motorizadoId;
+  }
+
+  // Nunca mostrar el id interno del pedido (Fase 24): se resuelve al
+  // codigo de negocio, mismo patron que motorizadoLabel.
+  function pedidoCodigo(pedidoId: string | null): string {
+    if (!pedidoId) return SIN_VALOR_LABEL;
+    return pedidoCodigoById.get(pedidoId) ?? pedidoId;
   }
 
   const columns: DataTableColumn<Incidente>[] = [
@@ -42,7 +51,7 @@ export function IncidentesPage(): HTMLElement {
     {
       key: 'pedidoId',
       header: 'Pedido',
-      render: (row) => (row.pedidoId ? `#${row.pedidoId}` : SIN_VALOR_LABEL),
+      render: (row) => pedidoCodigo(row.pedidoId),
     },
     {
       key: 'motorizadoId',
@@ -109,16 +118,18 @@ export function IncidentesPage(): HTMLElement {
     table.reload();
   });
 
+  void PedidosService.listar({ page: 1, limit: 100 }).then((response) => {
+    pedidoCodigoById = new Map(response.data.map((pedido) => [pedido.id, pedido.codigoPedido]));
+    table.reload();
+  });
+
   function openDetailModal(incidente: Incidente): void {
     const modal = Modal({
       title: 'Detalle de incidente',
       content: DetailList({
         fields: [
           { label: 'ID', value: incidente.id },
-          {
-            label: 'Pedido',
-            value: incidente.pedidoId ? `#${incidente.pedidoId}` : SIN_VALOR_LABEL,
-          },
+          { label: 'Pedido', value: pedidoCodigo(incidente.pedidoId) },
           { label: 'Motorizado', value: motorizadoLabel(incidente.motorizadoId) },
           { label: 'Tipo', value: TIPO_INCIDENTE_LABEL[incidente.tipo] },
           { label: 'Resuelto', value: incidente.resuelto ? 'Si' : 'No' },

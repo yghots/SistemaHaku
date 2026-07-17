@@ -187,8 +187,18 @@ export function PedidosPage(): HTMLElement {
           }),
       },
       {
+        key: 'totalPedido',
+        header: 'Total del pedido',
+        render: (row) => formatMonto(row.totalPedido),
+      },
+      {
+        key: 'totalPagado',
+        header: 'Total pagado',
+        render: (row) => formatMonto(row.totalPagado),
+      },
+      {
         key: 'saldoPendiente',
-        header: 'Saldo',
+        header: 'Pendiente',
         render: (row) => formatMonto(row.saldoPendiente),
       },
       {
@@ -305,6 +315,9 @@ export function PedidosPage(): HTMLElement {
           },
           { label: 'Valor del producto', value: formatMonto(pedido.valorProducto) },
           { label: 'Costo de envio', value: formatMonto(pedido.costoEnvio) },
+          { label: 'Total del pedido', value: formatMonto(pedido.totalPedido) },
+          { label: 'Total pagado', value: formatMonto(pedido.totalPagado) },
+          { label: 'Pendiente', value: formatMonto(pedido.saldoPendiente) },
           { label: 'Estado', value: ESTADO_PEDIDO_LABEL[pedido.estado] },
           { label: 'Observaciones', value: formatOptional(pedido.observaciones) },
           { label: 'Creado', value: dayjs(pedido.creadoEn).format('DD/MM/YYYY HH:mm') },

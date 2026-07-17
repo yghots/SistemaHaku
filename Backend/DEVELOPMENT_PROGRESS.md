@@ -2666,3 +2666,81 @@ Prisma 7 tipa `Bytes` como `Uint8Array<ArrayBuffer>` (no `Buffer`) en su cliente
 - `ARCHITECTURE.md`, `API_OVERVIEW.md` actualizados.
 
 **No se modificó ningún otro módulo** (Pedidos, Historial, Usuarios, Clientes, Tiendas, Sucursales, Motorizados, Pagos, Reportes, Dashboard, Importaciones, Exportaciones) — el backend vuelve a quedar en feature freeze al cerrar esta fase, salvo por la captura desde cámara y la optimización de imágenes, explícitamente diferidas a la siguiente fase (y explícitamente fuera del alcance del Frontend en esta).
+
+## Fase 21.1 — Exponer `totalPedido`/`totalPagado` en `PedidoResponseDto`
+
+Pedido del Frontend: reemplazar la columna "Saldo" de la tabla de Pedidos por tres columnas (Total del pedido, Total pagado, Pendiente). Antes de tocar nada se verificó si el dato ya existía: `PedidosService.resumenPagoDeMuchos` (Fase 21) ya calcula `totalPedido` y `totalPagado` para cada pedido — una sola consulta agregada por página, reutilizada tanto por `listar` como por `buscarPorId` — pero `PedidosMapper` solo copiaba `estadoPago`/`saldoPendiente` al DTO de respuesta, descartando los otros dos campos ya calculados.
+
+**Cambio, puramente aditivo**: se agregaron `totalPedido: string` y `totalPagado: string` a `PedidoResponseDto` (`dto/pedido-response.dto.ts`) y se completó el mapeo en `PedidosMapper.toResponseDto` (`resumenPago.totalPedido.toFixed(2)` / `resumenPago.totalPagado.toFixed(2)`, mismo patrón que `saldoPendiente`). **Cero consultas nuevas, cero lógica de negocio nueva** — `ResumenPagoPedidoCalculado` ya traía ambos valores desde `estado-pago-pedido.util.ts`. `saldoPendiente`/`estadoPago` se dejaron intactos (compatibilidad de API): ningún consumidor existente se rompe, solo se agregan dos campos nuevos.
+
+**Archivos modificados**: `src/modules/pedidos/dto/pedido-response.dto.ts`, `src/modules/pedidos/pedidos.mapper.ts`. Ningún otro archivo del backend (Reportes usa su propio DTO `ReportePedidoItemDto`, no se tocó).
+
+**Pruebas**: `tsc --noEmit` ✓. Verificado contra MySQL real: `GET /pedidos/:id` y `GET /pedidos?page=&limit=` devuelven `totalPedido`/`totalPagado`/`saldoPendiente` consistentes (`totalPedido - totalPagado = saldoPendiente` en ambos endpoints, confirmando que el listado paginado usa la misma aritmética agregada que el detalle, sin N+1).
+
+## Bugfix — `Cross-Origin-Resource-Policy` bloqueaba la carga de fotos en el navegador
+
+**Síntoma** (reportado tras la mejora de miniaturas/preview en el Frontend): las fotografías nunca llegaban a renderizarse como `<img>` — ni antes ni después de esa mejora — aunque `GET /pedidos/:id/fotos/:fotoId/imagen` respondía `200 OK` con el `Content-Type` correcto.
+
+**Causa raíz**: `helmet()` (`main.ts`, sin configuración explícita) agrega por defecto `Cross-Origin-Resource-Policy: same-origin` a **todas** las respuestas. El Frontend (Vite, puerto 5173) y el Backend (puerto 3000) son orígenes distintos — el navegador aplica esta política y **bloquea silenciosamente** cualquier `<img src>`/`fetch` cross-origin hacia ese endpoint, disparando el evento `error` en el `<img>`, aunque la petición HTTP en sí sea exitosa. `curl` nunca lo detectó porque CORP es una política exclusivamente de navegador. El único motivo por el que "antes funcionaba" es que el Frontend usaba un `<a href target="_blank">` (una navegación de nivel superior, no un subrecurso embebido — CORP no aplica ahí), nunca una miniatura realmente renderizada.
+
+**Archivo modificado**: `src/modules/fotos-entrega/fotos-entrega.controller.ts` — se agrega `'Cross-Origin-Resource-Policy': 'cross-origin'` junto al `Content-Type` ya existente, **únicamente** en la respuesta de `GET /pedidos/:id/fotos/:fotoId/imagen` (el único endpoint pensado para incrustarse como `<img>` desde un origen distinto). Ningún otro endpoint se tocó — el resto de la API conserva `same-origin` por defecto de `helmet()`, verificado explícitamente (`GET /pedidos/:id/fotos` sigue devolviendo `same-origin`).
+
+**Pruebas**: verificado con headers reales contra el servidor corriendo: el endpoint de imagen ahora responde `Cross-Origin-Resource-Policy: cross-origin`; el endpoint de listado (`/fotos`) sigue en `same-origin`, confirmando que el cambio quedó acotado. `tsc --noEmit`, `eslint`, `prettier --check`, `npm run build` sin errores.
+
+## Fase 22 — Código de negocio profesional para `codigoPedido` (proyecto Fase 24)
+
+Reemplazo de `codigoPedido = id.toString()` (decisión de la Fase 7) por un código de negocio real: **`PED-AAAA-NNNNNN`** (ej. `PED-2026-000042`). Cambio puramente de generación — **cero cambios de esquema, migraciones, DTOs, endpoints o relaciones**; la columna `codigo_pedido` ya existía (`VarChar(30)`, `@unique`) y sigue exactamente igual.
+
+### Estrategia de generación
+
+- **`AAAA`**: el año de `Pedido.creadoEn` (el timestamp real de creación, ya devuelto por `tx.pedido.create()` dentro de la misma transacción) — **nunca `new Date()`**, para que el código siempre refleje cuándo el pedido realmente se creó, no el momento en que se ejecuta el código.
+- **`NNNNNN`**: el `id` autoincremental, rellenado a 6 dígitos con ceros a la izquierda. Es un consecutivo global que nunca reinicia por año (ej. `PED-2026-000999` → `PED-2027-001000`) — deliberadamente **sin** contador anual ni tabla auxiliar: el `id` ya es único y estrictamente creciente, así que no hace falta ninguna infraestructura adicional para lograr esa propiedad.
+
+### Componente centralizado: `PedidoCodigoGenerator`
+
+`src/modules/pedidos/pedido-codigo.generator.ts` (nuevo) — clase con un único método estático `generar(id: bigint, creadoEn: Date): string`, mismo patrón ya usado por `PedidosMapper` (métodos `static`, sin inyección de dependencias, pura función de transformación). Es el **único** punto del backend que construye este string — `pedidos.repository.ts` es su único consumidor. Si el formato cambia en el futuro, se edita únicamente este archivo.
+
+### Integración
+
+`pedidos.repository.ts.crear()` mantiene exactamente el mismo mecanismo ya existente (valor transitorio único durante el insert, porque el `id` autoincremental no se conoce antes de crear la fila, corregido en la misma `$transaction`) — solo cambió qué valor final se escribe: antes `creado.id.toString()`, ahora `PedidoCodigoGenerator.generar(creado.id, creado.creadoEn)`.
+
+### Datos existentes
+
+Proyecto sin producción (dato explícito del pedido de esta fase): se actualizaron los 17 pedidos existentes con un script puntual de backfill (ejecutado una sola vez con `ts-node`, reutilizando `PedidoCodigoGenerator` para garantizar el mismo formato exacto que generarán los pedidos nuevos, y luego eliminado del repositorio — no es infraestructura permanente). **Cero migración de Prisma**: es una actualización de valores de fila, no de esquema.
+
+### Pruebas realizadas
+
+- `prisma validate` ✓, `prisma generate` ✓, `tsc --noEmit` ✓, `eslint` ✓, `prettier --check` ✓, `npm run build` ✓.
+- **Backfill verificado**: `GET /pedidos?page=&limit=` muestra los 17 pedidos existentes con el nuevo formato (`PED-2026-000024` … `PED-2026-000041`).
+- **Creación real**: `POST /pedidos` con datos válidos generó `PED-2026-000042` para un pedido con `id=42`, año tomado de su `creadoEn` real.
+- **Búsqueda por código**: `GET /pedidos?codigoPedido=PED-2026-000042` (exacto) y `GET /pedidos?codigoPedido=000042` (parcial, mismo filtro `contains` ya existente, sin cambios) devuelven el pedido correcto.
+- **Reportes/exportaciones**: `GET /reportes/pedidos` y `GET /reportes/pedidos/export?formato=json` devuelven `codigoPedido` con el nuevo formato (reutilizan el mismo campo persistido, sin lógica propia de generación).
+- **`npm test`/`npm run test:e2e`**: **no ejecutables en este entorno** — fallan con `"Module ts-jest in the transform option was not found"`. Confirmado con `git stash` que esta falla es **preexistente y no relacionada** con los cambios de esta fase (falla exactamente igual en `main` sin ningún cambio aplicado) — parece un problema de resolución de módulos de Jest/ts-jest en este entorno, ajeno al alcance de esta fase. Se documenta como limitación, no se intentó arreglar (fuera de alcance).
+
+### Archivos modificados
+
+- `src/modules/pedidos/pedido-codigo.generator.ts` (nuevo).
+- `src/modules/pedidos/pedidos.repository.ts` (usa el generador en `crear()`).
+- `ARCHITECTURE.md` (§6, decisión actualizada).
+
+**No se modificó**: schema.prisma, migraciones, DTOs, controllers, endpoints, ni ningún otro módulo (Reportes, Importaciones, Pagos, Flujo de Pedido, etc. — todos leen `codigoPedido` ya persistido, sin generarlo).
+
+## Fase 23 — Filtro por rol en el listado de Usuarios (proyecto Fase 25)
+
+Se agregó el parámetro opcional `rol` a `GET /usuarios` (`?rol=administrador`/`?rol=motorizado`), combinable con los filtros ya existentes (`usuario`, `correo`). **Mismo endpoint, sin endpoints nuevos.**
+
+### Cambios (mismo patrón ya usado por `estado` en `ListPedidosQueryDto`)
+
+- `dto/list-usuarios-query.dto.ts`: campo `rol?: RolUsuario` con `@IsOptional() @IsEnum(RolUsuario)` — un valor fuera del enum responde `400` (whitelist/enum de `class-validator`, sin tocar `ValidationPipe`).
+- `interfaces/usuarios-repository.interface.ts`: `BuscarUsuariosParams.rol?: Usuario['rol']`.
+- `usuarios.repository.ts`: `...(params.rol ? { rol: params.rol } : {})` agregado directamente al `where` de Prisma (`buscarMuchos`) — filtro por igualdad exacta (no `contains`, es un enum), **nunca en memoria**.
+- `usuarios.service.ts`: pasa `query.rol` al repositorio.
+- Controller: **sin cambios** — ya delega `@Query() query: ListUsuariosQueryDto` completo al servicio.
+
+### Pruebas realizadas
+
+Contra el servidor real: sin filtro (13 usuarios, todos los roles), `rol=administrador` (9, todos administrador), `rol=motorizado` (4, todos motorizado), `usuario=jey&rol=motorizado` (1 resultado exacto), `usuario=jey&rol=administrador` (0, confirma AND real no OR), `correo=gmail&rol=motorizado` (1), `usuario=jey&correo=gmail&rol=motorizado` (los 3 combinados, 1 resultado), `rol=superadmin` (400, enum inválido rechazado), paginación con filtro (`page=1`/`page=2` con `rol=administrador`, mismo `total=9` en ambas, filtro persistente entre páginas). `tsc --noEmit` ✓, `eslint` ✓, `npm run build` ✓.
+
+### Archivos modificados
+
+`dto/list-usuarios-query.dto.ts`, `interfaces/usuarios-repository.interface.ts`, `usuarios.repository.ts`, `usuarios.service.ts`. **No se tocó**: `usuarios.controller.ts`, ningún otro módulo, ni la arquitectura existente.

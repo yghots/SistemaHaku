@@ -21,6 +21,14 @@ httpClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (token) {
     config.headers.set('Authorization', `Bearer ${token}`);
   }
+  // La instancia fija 'Content-Type: application/json' por defecto (arriba).
+  // Cuando el body es un FormData (subida de archivos), ese header explicito
+  // hace que axios serialice el FormData como JSON en vez de enviarlo como
+  // multipart/form-data — hay que quitarlo para que el navegador genere el
+  // Content-Type real con el boundary correcto.
+  if (config.data instanceof FormData) {
+    config.headers.delete('Content-Type');
+  }
   return config;
 });
 

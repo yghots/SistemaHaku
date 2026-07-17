@@ -8,17 +8,19 @@ import {
   CrearPedidoData,
   IPedidosRepository,
 } from './interfaces/pedidos-repository.interface';
+import { PedidoCodigoGenerator } from './pedido-codigo.generator';
 
 @Injectable()
 export class PedidosRepository implements IPedidosRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  // codigoPedido = id.toString() (decision aprobada en Fase 7). El id
-  // autoincremental no se conoce antes del insert, asi que se crea el
+  // codigoPedido = PED-AAAA-NNNNNN, generado por PedidoCodigoGenerator a
+  // partir del id y de creadoEn (Fase 24; antes era id.toString(), Fase 7).
+  // El id autoincremental no se conoce antes del insert, asi que se crea el
   // registro con un valor transitorio (nunca expuesto) que solo existe
   // para satisfacer la columna NOT NULL/UNIQUE durante la transaccion, y
   // se corrige en el mismo $transaction al valor final. Ver
-  // DEVELOPMENT_PROGRESS.md (Fase 7) para el detalle de esta decision.
+  // DEVELOPMENT_PROGRESS.md (Fases 7 y 24) para el detalle de esta decision.
   async crear(data: CrearPedidoData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
       const codigoPedidoTemporal = `tmp_${randomBytes(10).toString('hex')}`;
@@ -29,7 +31,12 @@ export class PedidosRepository implements IPedidosRepository {
 
       return tx.pedido.update({
         where: { id: creado.id },
-        data: { codigoPedido: creado.id.toString() },
+        data: {
+          codigoPedido: PedidoCodigoGenerator.generar(
+            creado.id,
+            creado.creadoEn,
+          ),
+        },
       });
     });
   }

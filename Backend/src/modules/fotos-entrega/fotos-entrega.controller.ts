@@ -65,7 +65,16 @@ export class FotosEntregaController {
       BigInt(id),
       BigInt(fotoId),
     );
-    res.set({ 'Content-Type': foto.mimeType });
+    // 'Cross-Origin-Resource-Policy: same-origin' (default de helmet(), Fase 12)
+    // bloquea en el navegador cualquier <img>/fetch cross-origin — el Frontend
+    // (Vite, otro puerto) siempre lo es. Este endpoint existe unicamente para
+    // ser incrustado como <img src> desde ahi, asi que se relaja solo aqui
+    // (nunca globalmente): el resto de la API mantiene la proteccion CORP
+    // por defecto de helmet().
+    res.set({
+      'Content-Type': foto.mimeType,
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    });
     return new StreamableFile(foto.imagen);
   }
 }

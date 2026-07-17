@@ -56,6 +56,9 @@ export interface Pedido {
   creadoEn: string;
   /** Calculado por el backend a partir de los pagos registrados (Fase 21) — nunca recalculado en el frontend. */
   estadoPago: EstadoPagoPedido;
+  /** Total del pedido (valorProducto + costoEnvio) y total pagado — igual que ResumenPagoPedido, calculados aqui para no requerir una llamada aparte en tabla/detalle. */
+  totalPedido: string;
+  totalPagado: string;
   saldoPendiente: string;
 }
 

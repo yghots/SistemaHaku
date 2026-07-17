@@ -18,6 +18,13 @@ import { el } from '../../../utils/dom';
 import { nombreCompleto } from '../../../utils/nombre-completo';
 import { buildUsuarioForm } from './usuario-form';
 
+// Fase 25: opciones del filtro por rol, misma convencion que ESTADO_OPTIONS
+// en pedidos.page.ts (Object.entries sobre el mapa de etiquetas ya existente).
+const ROL_OPTIONS = Object.entries(ROL_USUARIO_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
+
 /** Pagina de referencia para todos los modulos administrativos (CRUD completo sobre /usuarios). */
 export function UsuariosPage(): HTMLElement {
   const columns: DataTableColumn<Usuario>[] = [
@@ -83,6 +90,7 @@ export function UsuariosPage(): HTMLElement {
     filterFields: [
       { name: 'usuario', placeholder: 'Buscar por usuario...' },
       { name: 'correo', placeholder: 'Buscar por correo...' },
+      { type: 'select', name: 'rol', placeholder: 'Todos los roles', options: ROL_OPTIONS },
     ],
     emptyTitle: 'Sin usuarios registrados',
     emptyDescription: 'Crea el primer usuario con el boton "Nuevo usuario".',

@@ -53,6 +53,7 @@ export class UsuariosService {
       take: query.limit,
       usuario: query.usuario,
       correo: query.correo,
+      rol: query.rol,
     });
 
     return new PaginatedResponseDto(

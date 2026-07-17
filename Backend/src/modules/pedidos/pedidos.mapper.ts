@@ -28,6 +28,8 @@ export class PedidosMapper {
       observaciones: pedido.observaciones,
       creadoEn: pedido.creadoEn,
       estadoPago: resumenPago.estadoPago,
+      totalPedido: resumenPago.totalPedido.toFixed(2),
+      totalPagado: resumenPago.totalPagado.toFixed(2),
       saldoPendiente: resumenPago.saldoPendiente.toFixed(2),
     });
   }
