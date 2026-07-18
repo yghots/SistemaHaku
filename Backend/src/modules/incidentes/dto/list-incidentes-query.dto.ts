@@ -2,14 +2,9 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TipoIncidente } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { parseBooleanQueryParam } from '../../../common/utils/parse-boolean-query-param.util';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
-// class-transformer's @Type(() => Boolean) hace Boolean(valor), y
-// Boolean("false") es true en JS: rompia el filtro `?resuelto=false`
-// (Fase 11). Se reemplaza por un parser explicito que solo reconoce
-// 'true'/'1' y 'false'/'0'; cualquier otro valor se deja intacto para
-// que @IsBoolean lo rechace con 400 (Fase 12, Correccion 1).
-//
 // El ValidationPipe global usa enableImplicitConversion: true. Sin un
 // @Type() explicito, class-transformer igual detecta por reflect-metadata
 // que esta propiedad es "boolean" y aplica su propio Boolean(valor) ANTES
@@ -17,19 +12,6 @@ import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 // esa conversion implicita (String(valor) es identidad para el string que
 // realmente llega desde el query), dejando que @Transform reciba el
 // string original sin tocar.
-function parseBooleanQueryParam(value: unknown): unknown {
-  if (typeof value !== 'string') {
-    return value;
-  }
-  if (value === 'true' || value === '1') {
-    return true;
-  }
-  if (value === 'false' || value === '0') {
-    return false;
-  }
-  return value;
-}
-
 export class ListIncidentesQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'Filtra por id de pedido' })
   @IsOptional()

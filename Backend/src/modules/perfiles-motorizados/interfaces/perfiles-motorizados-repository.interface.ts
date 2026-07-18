@@ -1,4 +1,4 @@
-import { EstadoMotorizado, PerfilMotorizado } from '@prisma/client';
+import { PerfilMotorizado } from '@prisma/client';
 
 export const PERFILES_MOTORIZADOS_REPOSITORY = Symbol(
   'PERFILES_MOTORIZADOS_REPOSITORY',
@@ -15,19 +15,16 @@ export type PerfilMotorizadoConUsuario = PerfilMotorizado & {
 export interface CrearPerfilMotorizadoData {
   usuarioId: bigint;
   placa: string;
-  estado: EstadoMotorizado;
 }
 
 export interface ActualizarPerfilMotorizadoData {
   placa?: string;
-  estado?: EstadoMotorizado;
 }
 
 export interface BuscarPerfilesMotorizadosParams {
   skip: number;
   take: number;
   usuarioId?: bigint;
-  estado?: EstadoMotorizado;
   placa?: string;
 }
 
@@ -46,4 +43,11 @@ export interface IPerfilesMotorizadosRepository {
     data: ActualizarPerfilMotorizadoData,
   ): Promise<PerfilMotorizadoConUsuario>;
   eliminar(id: bigint): Promise<PerfilMotorizadoConUsuario>;
+  // Fase 32 (correccion N2 de la auditoria de certificacion): consulta
+  // directa a la tabla `pedido` (mismo precedente ya establecido por
+  // `UsuariosRepository.tienePerfilMotorizado`, Fase 29/A4 — evita inyectar
+  // PedidosService, que crearia un ciclo de DI real ya que `pedidos` no
+  // depende de `perfiles-motorizados` pero si lo hiciera se cerraria un
+  // circulo con flujo-pedido).
+  tienePedidosActivos(perfilId: bigint): Promise<boolean>;
 }

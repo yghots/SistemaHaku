@@ -17,6 +17,20 @@ export const ESTADOS_CANCELABLES: EstadoPedido[] = [
   EstadoPedido.en_ruta,
 ];
 
+// Fase 29 (correccion A2 de la auditoria): estados terminales desde los que
+// ya no tiene sentido reasignar un motorizado (el pedido salio por completo
+// del flujo activo). Antes de esta correccion, `reasignarMotorizado` no
+// validaba el estado del pedido en absoluto (hallazgo A1 original de
+// AUDIT_REPORT.md) — permitia reasignar incluso sobre un pedido ya
+// entregado/cancelado/rechazado. Unica fuente de verdad, mismo patron que
+// `ESTADOS_CANCELABLES`: tanto el service (mensaje de error) como el
+// repository (condicion atomica del update) importan esta misma constante.
+export const ESTADOS_NO_REASIGNABLES: EstadoPedido[] = [
+  EstadoPedido.entregado,
+  EstadoPedido.cancelado,
+  EstadoPedido.rechazado,
+];
+
 // Fase 22: las fotos se reciben como binario (multipart/form-data) y se
 // almacenan directamente en MySQL — `imagen`/`mimeType` reemplazan por
 // completo al antiguo `urlImagen`. `Uint8Array` (no `Buffer`) porque es

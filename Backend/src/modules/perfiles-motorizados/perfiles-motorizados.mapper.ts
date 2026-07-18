@@ -11,7 +11,6 @@ export class PerfilesMotorizadosMapper {
       nombres: perfil.usuario.nombres,
       apellidos: perfil.usuario.apellidos,
       placa: perfil.placa,
-      estado: perfil.estado,
     });
   }
 

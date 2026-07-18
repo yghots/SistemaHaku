@@ -45,6 +45,7 @@ export class UsuariosRepository implements IUsuariosRepository {
       ...(params.usuario ? { usuario: { contains: params.usuario } } : {}),
       ...(params.correo ? { correo: { contains: params.correo } } : {}),
       ...(params.rol ? { rol: params.rol } : {}),
+      ...(params.activo !== undefined ? { activo: params.activo } : {}),
     };
 
     const [data, total] = await Promise.all([
@@ -73,5 +74,48 @@ export class UsuariosRepository implements IUsuariosRepository {
       where: { id },
       data: { deletedAt: new Date() },
     });
+  }
+
+  async tienePerfilMotorizado(usuarioId: bigint): Promise<boolean> {
+    const perfil = await this.prisma.perfilMotorizado.findUnique({
+      where: { usuarioId },
+      select: { id: true },
+    });
+    return perfil !== null;
+  }
+
+  async tieneHistorial(usuarioId: bigint): Promise<boolean> {
+    const [
+      pedidoCreado,
+      eventoHistorial,
+      pagoRegistrado,
+      importacion,
+      tienePerfil,
+    ] = await Promise.all([
+      this.prisma.pedido.findFirst({
+        where: { creadoPorId: usuarioId },
+        select: { id: true },
+      }),
+      this.prisma.historialPedido.findFirst({
+        where: { usuarioId },
+        select: { id: true },
+      }),
+      this.prisma.pago.findFirst({
+        where: { creadoPorId: usuarioId },
+        select: { id: true },
+      }),
+      this.prisma.importacionHistorial.findFirst({
+        where: { usuarioId },
+        select: { id: true },
+      }),
+      this.tienePerfilMotorizado(usuarioId),
+    ]);
+    return (
+      pedidoCreado !== null ||
+      eventoHistorial !== null ||
+      pagoRegistrado !== null ||
+      importacion !== null ||
+      tienePerfil
+    );
   }
 }

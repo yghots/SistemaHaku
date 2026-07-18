@@ -16,6 +16,7 @@ import { ImportReaderService } from '../../common/imports/import-reader.service'
 import type { FormatoImportacion } from '../../common/imports/import.types';
 import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 import { assertFound } from '../../common/utils/assert-found.util';
+import { esArchivoZip } from '../../common/utils/firma-archivo.util';
 import { UsuariosService } from '../usuarios/usuarios.service';
 import { ImportacionHistorialDetalleDto } from './dto/importacion-historial-detalle.dto';
 import { ImportacionHistorialItemDto } from './dto/importacion-historial-item.dto';
@@ -218,6 +219,8 @@ export class ImportacionesService {
     }[];
     totalEncontrados: number;
   }> {
+    this.validarFirmaArchivo(formato, buffer);
+
     const inicio = Date.now();
     const filasCrudas = await this.importReaderService.leer(formato, buffer);
     const importador = this.obtenerImportador(entidad);
@@ -323,5 +326,25 @@ export class ImportacionesService {
       );
     }
     return entidad;
+  }
+
+  /**
+   * Fase 29 (correccion A8 de la auditoria): el `formato` recibido por query
+   * param es, hasta este punto, solo una declaracion del cliente — nunca se
+   * habia verificado que el archivo realmente sea de ese tipo. Un `.xlsx`
+   * real es siempre un contenedor ZIP (firma binaria `PK`); `json`/`xml` son
+   * texto plano sin firma binaria propia, y el lector correspondiente ya
+   * rechaza contenido malformado al intentar parsearlo (`JsonImportReader`/
+   * `XmlImportReader`), asi que no necesitan esta verificacion adicional.
+   */
+  private validarFirmaArchivo(
+    formato: FormatoImportacion,
+    buffer: Buffer,
+  ): void {
+    if (formato === 'xlsx' && !esArchivoZip(buffer)) {
+      throw new BadRequestException(
+        "El archivo no es un .xlsx valido (firma binaria incorrecta) — verifica que el formato declarado ('xlsx') coincida con el archivo adjunto.",
+      );
+    }
   }
 }

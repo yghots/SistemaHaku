@@ -56,7 +56,6 @@ export class PerfilesMotorizadosService {
       const perfil = await this.perfilesMotorizadosRepository.crear({
         usuarioId,
         placa: dto.placa,
-        estado: dto.estado,
       });
       return PerfilesMotorizadosMapper.toResponseDto(perfil);
     } catch (error) {
@@ -95,7 +94,6 @@ export class PerfilesMotorizadosService {
         skip: query.skip,
         take: query.limit,
         usuarioId: query.usuarioId ? BigInt(query.usuarioId) : undefined,
-        estado: query.estado,
         placa: query.placa,
       });
 
@@ -121,7 +119,6 @@ export class PerfilesMotorizadosService {
       const perfilActualizado =
         await this.perfilesMotorizadosRepository.actualizar(id, {
           ...(dto.placa ? { placa: dto.placa } : {}),
-          ...(dto.estado ? { estado: dto.estado } : {}),
         });
       return PerfilesMotorizadosMapper.toResponseDto(perfilActualizado);
     } catch (error) {
@@ -131,6 +128,20 @@ export class PerfilesMotorizadosService {
 
   async eliminar(id: bigint): Promise<PerfilMotorizadoResponseDto> {
     await this.obtenerPerfilOFallar(id);
+
+    // Fase 32 (correccion N2 de la auditoria de certificacion): antes de
+    // esta correccion, `Pedido.motorizadoActualId` usa `onDelete: SetNull`
+    // (a diferencia de fotos/incidentes, que son `Restrict`), asi que
+    // eliminar un perfil con un pedido activo asignado lo dejaba huerfano
+    // (motorizadoActualId = NULL, estado sin cambiar) sin ninguna via de
+    // recuperacion excepto cancelarlo. Se valida explicitamente en vez de
+    // depender de la violacion de llave foranea, que nunca ocurriria para
+    // esta relacion.
+    if (await this.perfilesMotorizadosRepository.tienePedidosActivos(id)) {
+      throw new ConflictException(
+        'No se puede eliminar el perfil: tiene pedidos activos asignados',
+      );
+    }
 
     try {
       const perfil = await this.perfilesMotorizadosRepository.eliminar(id);

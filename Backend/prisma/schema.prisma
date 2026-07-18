@@ -15,15 +15,6 @@ enum RolUsuario {
   motorizado
 }
 
-// "Disponible, ocupado, inactivo, etc." (doc 4.1) - conjunto cerrado acordado
-// con el cliente para esta fase; agregar valores despues es una migracion de
-// bajo riesgo.
-enum EstadoMotorizado {
-  disponible
-  ocupado
-  inactivo
-}
-
 // Flujo principal (doc 2.3): pendiente -> asignado -> recogido -> en_ruta -> entregado
 // Estados alternativos: cancelado, reprogramado, devuelto, rechazado, cliente_ausente
 enum EstadoPedido {
@@ -123,9 +114,15 @@ model Usuario {
 }
 
 model Tienda {
-  id        BigInt    @id @default(autoincrement())
-  nombre    String    @db.VarChar(150)
-  ruc       String?   @db.VarChar(20)
+  id     BigInt @id @default(autoincrement())
+  nombre String @db.VarChar(150)
+  // @unique (Fase 28, correccion C2 de la auditoria): antes solo se
+  // verificaba en el servicio (verificar-luego-escribir, sin atomicidad),
+  // la misma clase de condicion de carrera que ya se habia corregido para
+  // Pedido en la Fase 15. MySQL permite multiples NULL en un indice unico,
+  // asi que el campo sigue siendo opcional sin restriccion para quien no
+  // lo provee. Deliberadamente solo el RUC — `nombre` no se toca.
+  ruc       String?   @unique @db.VarChar(20)
   activo    Boolean   @default(true)
   deletedAt DateTime? @map("deleted_at")
 
@@ -168,13 +165,17 @@ model Cliente {
 }
 
 model PerfilMotorizado {
-  id        BigInt           @id @default(autoincrement())
-  usuarioId BigInt           @unique @map("usuario_id")
+  id        BigInt @id @default(autoincrement())
+  usuarioId BigInt @unique @map("usuario_id")
   // @unique (Fase 19): necesario para que la importacion masiva de
   // Motorizados pueda detectar placas duplicadas (ver DEVELOPMENT_PROGRESS.md
   // Fase 17).
-  placa     String           @unique @db.VarChar(15)
-  estado    EstadoMotorizado @default(disponible)
+  placa     String @unique @db.VarChar(15)
+  // `estado` (EstadoMotorizado: disponible/ocupado/inactivo) eliminado en
+  // la Fase 33 (Parte 4 del rediseno de ciclo de vida): confirmado que
+  // nunca participo en ninguna regla de negocio de flujo-pedido (hallazgo
+  // A3 de la auditoria, Fase 27/29) — el estado operativo real de un
+  // motorizado ahora se deriva unicamente de `Usuario.activo`.
 
   usuario          Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
   pedidosActuales  Pedido[]          @relation("MotorizadoActualDelPedido")
@@ -182,7 +183,6 @@ model PerfilMotorizado {
   incidentes       Incidente[]
   eventosHistorial HistorialPedido[] @relation("ReasignacionesDelMotorizado")
 
-  @@index([estado])
   @@map("perfiles_motorizados")
 }
 

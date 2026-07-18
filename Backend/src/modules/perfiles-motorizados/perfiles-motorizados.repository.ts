@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ESTADOS_CANCELABLES } from '../flujo-pedido/interfaces/flujo-pedido-repository.interface';
 import {
   ActualizarPerfilMotorizadoData,
   BuscarPerfilesMotorizadosParams,
@@ -55,7 +56,6 @@ export class PerfilesMotorizadosRepository implements IPerfilesMotorizadosReposi
   ): Promise<{ data: PerfilMotorizadoConUsuario[]; total: number }> {
     const where: Prisma.PerfilMotorizadoWhereInput = {
       ...(params.usuarioId ? { usuarioId: params.usuarioId } : {}),
-      ...(params.estado ? { estado: params.estado } : {}),
       ...(params.placa ? { placa: { contains: params.placa } } : {}),
     };
 
@@ -89,5 +89,16 @@ export class PerfilesMotorizadosRepository implements IPerfilesMotorizadosReposi
       where: { id },
       include: INCLUDE_USUARIO,
     });
+  }
+
+  async tienePedidosActivos(perfilId: bigint): Promise<boolean> {
+    const pedido = await this.prisma.pedido.findFirst({
+      where: {
+        motorizadoActualId: perfilId,
+        estado: { in: ESTADOS_CANCELABLES },
+      },
+      select: { id: true },
+    });
+    return pedido !== null;
   }
 }

@@ -1,6 +1,5 @@
 import { Bike, PackageCheck, TrendingUp, Truck } from 'lucide';
 import { infoAlert } from '../../../components/alert/alert';
-import { Badge } from '../../../components/badge/badge';
 import type { DataTableColumn } from '../../../components/datatable/datatable';
 import { ExportButton } from '../../../components/export-button/export-button';
 import { Loader } from '../../../components/loader/loader';
@@ -15,7 +14,6 @@ import { HttpError } from '../../../services/http/http-error';
 import { MotorizadosService } from '../../../services/motorizados.service';
 import { ReportesService } from '../../../services/reportes.service';
 import { SessionService } from '../../../services/session.service';
-import type { EstadoMotorizado } from '../../../types/perfil-motorizado';
 import type { ReporteMotorizadoItem } from '../../../types/reporte';
 import { downloadBlob } from '../../../utils/download-file';
 import { el } from '../../../utils/dom';
@@ -23,30 +21,8 @@ import { fetchAllPages } from '../../../utils/fetch-all-pages';
 import { formatMotorizado } from '../../../utils/format-motorizado';
 import { nombreCompleto } from '../../../utils/nombre-completo';
 
-const ESTADO_MOTORIZADO_LABEL: Record<EstadoMotorizado, string> = {
-  disponible: 'Disponible',
-  ocupado: 'Ocupado',
-  inactivo: 'Inactivo',
-};
-
-const ESTADO_MOTORIZADO_BADGE_VARIANT: Record<EstadoMotorizado, 'success' | 'warning' | 'neutral'> =
-  {
-    disponible: 'success',
-    ocupado: 'warning',
-    inactivo: 'neutral',
-  };
-
 const COLUMNS: DataTableColumn<ReporteMotorizadoItem>[] = [
   { key: 'nombres', header: 'Motorizado', render: (row) => formatMotorizado(row) },
-  {
-    key: 'estado',
-    header: 'Estado',
-    render: (row) =>
-      Badge({
-        label: ESTADO_MOTORIZADO_LABEL[row.estado],
-        variant: ESTADO_MOTORIZADO_BADGE_VARIANT[row.estado],
-      }),
-  },
   { key: 'pedidosAtendidos', header: 'Pedidos atendidos' },
   { key: 'entregas', header: 'Entregas' },
   { key: 'incidentes', header: 'Incidentes' },

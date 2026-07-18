@@ -1,4 +1,4 @@
-import { EstadoMotorizado, EstadoPedido, MetodoPago } from '@prisma/client';
+import { EstadoPedido, MetodoPago } from '@prisma/client';
 import type { EstadoPagoPedido } from '../../../common/types/estado-pago-pedido.type';
 
 export const REPORTES_REPOSITORY = Symbol('REPORTES_REPOSITORY');
@@ -58,7 +58,6 @@ export interface ReporteMotorizadoRow {
   nombres: string;
   apellidos: string;
   placa: string;
-  estado: EstadoMotorizado;
   pedidosAtendidos: number;
   entregas: number;
   incidentes: number;

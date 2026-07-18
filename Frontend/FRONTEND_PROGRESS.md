@@ -2194,3 +2194,50 @@ El Backend (ver `DEVELOPMENT_PROGRESS.md`, Fase 24/proyecto 26) estandarizó las
 **Archivo modificado**: únicamente `pages/admin/importaciones/entidad-importacion.config.ts`. `instrucciones-modal.ts` no necesitó cambios (ya renderiza `camposObligatorios`/`camposOpcionales` genéricamente desde la config).
 
 **Pruebas**: `tsc --noEmit`, `eslint .`, `prettier --check .`, `npm run build` sin errores. Descarga de las 9 plantillas e importación real con el nuevo formato verificadas contra el backend (ver `DEVELOPMENT_PROGRESS.md`).
+
+## Fase 27 — Rediseño del ciclo de vida de Usuarios y Motorizados (proyecto Fase 33)
+
+Alcance conjunto Backend + Frontend (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 29, para el detalle del lado del servidor). El historial del negocio es inmutable: ningún usuario que haya participado en un proceso operativo puede eliminarse, solo desactivarse — la Fase 33 alinea las pantallas de Usuarios y Motorizados con esa regla.
+
+### Decisión: retirar la pantalla independiente `/admin/motorizados`
+
+El Backend eliminó `PerfilMotorizado.estado` (confirmado sin uso real en ninguna regla de negocio, hallazgo A3 de la auditoría) — sin ese campo, la única información propia del módulo de Motorizados era la placa, insuficiente para justificar un CRUD administrativo separado cuando el resto de los datos (nombre, usuario, correo, estado activo/inactivo) ya pertenecen a Usuarios. Se decidió **absorber la gestión del perfil operativo en la propia pantalla de Usuarios** en vez de mantener dos módulos con datos parcialmente solapados — prioriza simplicidad y evita duplicar funcionalidad, tal como pedía el brief.
+
+- **Retirado**: `pages/admin/motorizados/` (`motorizados.page.ts`, `motorizado-form.ts`), la ruta `/admin/motorizados` (`main.ts`) y su entrada de Sidebar (`admin-layout.ts`, icono `Bike`).
+- **`services/motorizados.service.ts` se mantiene intacto** — sigue siendo el único punto de llamadas a `/perfiles-motorizados` (usado ahora desde Usuarios, Pedidos, Incidentes y Reportes).
+- **`types/perfil-motorizado.ts`**: se retira `EstadoMotorizado` y el campo `estado` de las 4 interfaces (contrato exacto del backend, que ya no lo expone). Mismo ajuste en `types/reporte.ts` (`ReporteMotorizadoItem`).
+
+### Usuarios absorbe la gestión de Motorizados (Partes 3, 5 y 6 del brief)
+
+- **`usuario-form.ts`**: nuevo campo "Placa", condicionalmente visible (`Select` de rol con `onChange`, mismo patrón de campo condicional ya usado en selects dependientes de la Fase 7) — solo se muestra y se exige cuando el rol elegido es "Motorizado". En modo edición, el campo se precarga con la placa ya registrada (`initialPlaca`, resuelta por la página antes de abrir el modal).
+- **`usuarios.page.ts`**:
+  - Columna nueva "Placa" (solo con contenido en filas con rol motorizado, vía un mapa `usuarioId → placa` cargado una vez con `MotorizadosService.listar`, mismo patrón ya usado en Incidentes/Pedidos/Reportes para resolver un motorizado a una etiqueta sin N+1).
+  - Filtro nuevo "Activos/Inactivos/Todos" (`ResourceTable` `type: 'select'`, `initialValue: 'true'` — Activos es el estado por defecto de la pantalla; "Todos" reutiliza el mecanismo ya existente de "opción vacía = sin filtro").
+  - **Creación**: al crear un usuario con rol Motorizado, se crea inmediatamente su `PerfilMotorizado` (placa) en la misma acción del administrador — dos llamadas HTTP secuenciales orquestadas en el Frontend (`POST /usuarios` → `POST /perfiles-motorizados`), sin ningún endpoint nuevo. Si la creación del perfil falla (ej. placa duplicada), el usuario ya quedó creado (acción irreversible, mismo criterio ya establecido en la Fase 20.1/21 para sub-recursos): se informa el error puntual sin revertir nada, y el administrador puede completar la placa después desde "Editar".
+  - **Edición**: si el usuario tiene rol Motorizado, se resuelve su perfil existente (`MotorizadosService.buscarPorUsuarioId`) antes de abrir el modal; al guardar, se crea el perfil si todavía no existía, o se actualiza la placa solo si cambió.
+  - **Eliminar**: sin cambios de lógica (el 409 del backend por historial ya se muestra con el mismo mecanismo genérico de error existente) — el texto de confirmación ahora menciona explícitamente que un usuario con historial no podrá eliminarse.
+
+### `dashboard.service.ts`: KPI "Motorizados activos" sin `estado`
+
+Antes se calculaba como `total de perfiles − perfiles con estado inactivo` (`MotorizadosService.listar`). Ahora se deriva directamente de `UsuariosService.listar({ rol: 'motorizado', activo: true })` — una sola consulta en vez de dos, y más preciso semánticamente (cuenta cuentas de motorizado habilitadas, no perfiles con un estado operativo que ya no existe).
+
+### Limpieza de referencias residuales a `estado` de Motorizado
+
+- `pedidos.page.ts`: la etiqueta de motorizado en los Selects de asignar/reasignar ya no concatena `(${motorizado.estado})`.
+- `reporte-motorizados.page.ts`: columna "Estado" y sus mapas `ESTADO_MOTORIZADO_LABEL`/`ESTADO_MOTORIZADO_BADGE_VARIANT` retirados.
+- `entidad-importacion.config.ts`: la entidad "Motorizados" del Centro de Importaciones ya no lista `estado` entre sus campos obligatorios ni lo menciona en la descripción — alineado con el importador real del backend.
+
+### Integridad histórica verificada
+
+Confirmado contra el backend real: un `PerfilMotorizado` con un pedido activo asignado sigue devolviendo nombres/apellidos/placa completos aun después de desactivar su `Usuario` — ninguna pantalla (Pedidos, Incidentes, Reportes) cae a mostrar un id crudo por la desactivación.
+
+### Pruebas realizadas
+
+`tsc --noEmit` ✓, `eslint .` ✓, `npm run build` (`tsc && vite build`) ✓. Verificación funcional realizada a nivel de API contra el backend real para los flujos que el Frontend consume sin cambios de contrato (creación/edición de Usuario+perfil, filtro `activo`, desactivación con historial preservado) — no se ejecutó un recorrido manual en navegador en esta fase; se recomienda una verificación visual antes de dar la pantalla por cerrada en producción.
+
+### Archivos modificados/eliminados
+
+- Eliminados: `src/pages/admin/motorizados/motorizados.page.ts`, `motorizado-form.ts`.
+- Modificados: `src/main.ts`, `src/layouts/admin/admin-layout.ts`, `src/types/perfil-motorizado.ts`, `src/types/usuario.ts`, `src/types/reporte.ts`, `src/pages/admin/usuarios/usuario-form.ts`, `src/pages/admin/usuarios/usuarios.page.ts`, `src/services/dashboard.service.ts`, `src/pages/admin/pedidos/pedidos.page.ts`, `src/pages/admin/reportes/reporte-motorizados.page.ts`, `src/pages/admin/importaciones/entidad-importacion.config.ts`.
+
+**No se modificó**: `services/motorizados.service.ts`, ningún componente genérico de `components/`, ningún otro módulo de Reportes/Incidentes/Pedidos más allá de las referencias puntuales a `estado` de motorizado listadas arriba.

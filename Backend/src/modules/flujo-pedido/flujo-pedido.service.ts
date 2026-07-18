@@ -15,6 +15,7 @@ import { RegistrarClienteAusenteDto } from './dto/registrar-cliente-ausente.dto'
 import { RegistrarRechazoDto } from './dto/registrar-rechazo.dto';
 import {
   ESTADOS_CANCELABLES,
+  ESTADOS_NO_REASIGNABLES,
   FLUJO_PEDIDO_REPOSITORY,
 } from './interfaces/flujo-pedido-repository.interface';
 import type { IFlujoPedidoRepository } from './interfaces/flujo-pedido-repository.interface';
@@ -134,6 +135,11 @@ export class FlujoPedidoService {
     ) {
       throw new ConflictException(
         'El motorizado anterior no coincide con el motorizado asignado al pedido',
+      );
+    }
+    if (ESTADOS_NO_REASIGNABLES.includes(pedido.estado)) {
+      throw new ConflictException(
+        `El pedido no se puede reasignar en estado '${pedido.estado}'`,
       );
     }
 

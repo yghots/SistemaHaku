@@ -7,9 +7,17 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
   MaxLength,
 } from 'class-validator';
+
+// Fase 32 (correccion N6 de la auditoria de certificacion): tope maximo de
+// `Pago.monto`/`montoRecibido` (`Decimal(10,2)` en el schema) — sin este
+// limite, un valor que excede la capacidad de la columna pasaba
+// class-validator y fallaba recien en Prisma, devuelto como 500 generico
+// en vez de un 400 de validacion.
+const MONTO_MAXIMO = 99_999_999.99;
 
 export class CrearPagoDto {
   @ApiProperty({ description: 'Metodo de pago', enum: MetodoPago })
@@ -20,6 +28,7 @@ export class CrearPagoDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
+  @Max(MONTO_MAXIMO)
   monto: number;
 
   @ApiPropertyOptional({
@@ -30,6 +39,7 @@ export class CrearPagoDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(MONTO_MAXIMO)
   montoRecibido?: number;
 
   @ApiPropertyOptional({

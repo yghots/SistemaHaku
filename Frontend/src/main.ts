@@ -9,7 +9,6 @@ import { ClientesPage } from '@pages/admin/clientes/clientes.page';
 import { DashboardPage } from '@pages/admin/dashboard/dashboard.page';
 import { ImportacionesPage } from '@pages/admin/importaciones/importaciones.page';
 import { IncidentesPage } from '@pages/admin/incidentes/incidentes.page';
-import { MotorizadosPage } from '@pages/admin/motorizados/motorizados.page';
 import { PedidosPage } from '@pages/admin/pedidos/pedidos.page';
 import { ReporteEntregasPage } from '@pages/admin/reportes/reporte-entregas.page';
 import { ReporteMotorizadosPage } from '@pages/admin/reportes/reporte-motorizados.page';
@@ -145,17 +144,6 @@ function mountAdminPanel(): void {
     {
       title: 'Clientes',
       breadcrumb: [{ label: 'Clientes' }],
-    },
-  );
-
-  router.register(
-    '/admin/motorizados',
-    withAuth((container) => {
-      container.appendChild(MotorizadosPage());
-    }),
-    {
-      title: 'Motorizados',
-      breadcrumb: [{ label: 'Motorizados' }],
     },
   );
 

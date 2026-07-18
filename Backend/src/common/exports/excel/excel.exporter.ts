@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { ExportArchivo, ExportSolicitud, IExportador } from '../export.types';
 import { construirNombreArchivo } from '../export-filename.util';
+import { sanitizarCeldaExport } from '../sanitizar-celda-export.util';
 
 const ANCHO_MINIMO = 10;
 const ANCHO_MAXIMO = 60;
@@ -55,7 +56,7 @@ export class ExcelExporter implements IExportador {
     solicitud.filas.forEach((registro, filaIndex) => {
       solicitud.columnas.forEach((columna, columnaIndex) => {
         hoja.getCell(filaEncabezado + 1 + filaIndex, columnaIndex + 1).value =
-          registro[columna.clave] ?? '';
+          sanitizarCeldaExport(registro[columna.clave] ?? '');
       });
     });
 

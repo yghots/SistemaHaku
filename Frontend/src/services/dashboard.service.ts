@@ -1,10 +1,10 @@
 import dayjs from 'dayjs';
 import { ClientesService } from './clientes.service';
-import { MotorizadosService } from './motorizados.service';
 import { PedidosService } from './pedidos.service';
 import { ReportesService } from './reportes.service';
 import { SucursalesService } from './sucursales.service';
 import { TiendasService } from './tiendas.service';
+import { UsuariosService } from './usuarios.service';
 import type { PaginatedResponse } from '../types/api';
 import type { DashboardData, DashboardKpis } from '../types/dashboard';
 
@@ -36,8 +36,7 @@ export const DashboardService = {
       pedidosPendientesResult,
       pedidosEnRutaResult,
       pedidosEntregadosResult,
-      motorizadosTotalResult,
-      motorizadosInactivosResult,
+      motorizadosActivosResult,
       clientesResult,
       tiendasResult,
       sucursalesResult,
@@ -48,8 +47,10 @@ export const DashboardService = {
       PedidosService.listar({ page: 1, limit: 1, estado: 'pendiente' }),
       PedidosService.listar({ page: 1, limit: 1, estado: 'en_ruta' }),
       PedidosService.listar({ page: 1, limit: 1, estado: 'entregado' }),
-      MotorizadosService.listar({ page: 1, limit: 1 }),
-      MotorizadosService.listar({ page: 1, limit: 1, estado: 'inactivo' }),
+      // Fase 33: "motorizados activos" se deriva de `Usuario.activo`
+      // (rol motorizado) — `PerfilMotorizado.estado` se elimino por no
+      // participar en ninguna regla de negocio.
+      UsuariosService.listar({ page: 1, limit: 1, rol: 'motorizado', activo: true }),
       ClientesService.listar({ page: 1, limit: 1 }),
       TiendasService.listar({ page: 1, limit: 1 }),
       SucursalesService.listar({ page: 1, limit: 1 }),
@@ -65,10 +66,7 @@ export const DashboardService = {
       pedidosPendientes: extractTotal(pedidosPendientesResult),
       pedidosEnRuta: extractTotal(pedidosEnRutaResult),
       pedidosEntregados: extractTotal(pedidosEntregadosResult),
-      motorizadosActivos: extractMotorizadosActivos(
-        motorizadosTotalResult,
-        motorizadosInactivosResult,
-      ),
+      motorizadosActivos: extractTotal(motorizadosActivosResult),
       clientesRegistrados: extractTotal(clientesResult),
       tiendasRegistradas: extractTotal(tiendasResult),
       sucursalesRegistradas: extractTotal(sucursalesResult),
@@ -95,12 +93,4 @@ export const DashboardService = {
 
 function extractTotal(result: PromiseSettledResult<PaginatedResponse<unknown>>): number | null {
   return result.status === 'fulfilled' ? result.value.total : null;
-}
-
-function extractMotorizadosActivos(
-  totalResult: PromiseSettledResult<PaginatedResponse<unknown>>,
-  inactivosResult: PromiseSettledResult<PaginatedResponse<unknown>>,
-): number | null {
-  if (totalResult.status !== 'fulfilled' || inactivosResult.status !== 'fulfilled') return null;
-  return totalResult.value.total - inactivosResult.value.total;
 }

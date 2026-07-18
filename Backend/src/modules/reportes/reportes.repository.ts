@@ -199,7 +199,6 @@ export class ReportesRepository implements IReportesRepository {
         select: {
           id: true,
           placa: true,
-          estado: true,
           usuario: { select: { nombres: true, apellidos: true } },
         },
       }),
@@ -261,7 +260,6 @@ export class ReportesRepository implements IReportesRepository {
       nombres: m.usuario.nombres,
       apellidos: m.usuario.apellidos,
       placa: m.placa,
-      estado: m.estado,
       pedidosAtendidos: atendidosPorMotorizado.get(m.id.toString()) ?? 0,
       entregas: entregasPorMotorizado.get(m.id.toString()) ?? 0,
       incidentes: incidentesPorMotorizado.get(m.id.toString()) ?? 0,

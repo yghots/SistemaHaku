@@ -1,14 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { EstadoMotorizado } from '@prisma/client';
 import { Type } from 'class-transformer';
-import {
-  IsEnum,
-  IsInt,
-  IsNotEmpty,
-  IsString,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsInt, IsNotEmpty, IsString, MaxLength, Min } from 'class-validator';
 
 export class CreatePerfilMotorizadoDto {
   @ApiProperty({
@@ -24,11 +16,4 @@ export class CreatePerfilMotorizadoDto {
   @IsNotEmpty()
   @MaxLength(15)
   placa: string;
-
-  @ApiProperty({
-    description: 'Estado operativo del motorizado',
-    enum: EstadoMotorizado,
-  })
-  @IsEnum(EstadoMotorizado)
-  estado: EstadoMotorizado;
 }

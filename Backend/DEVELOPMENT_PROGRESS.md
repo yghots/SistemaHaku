@@ -2794,3 +2794,236 @@ Mismos endpoints (`GET .../plantilla`, `POST .../analizar`, `POST .../confirmar`
 ### Problemas encontrados
 
 Uno, transitorio y ya resuelto: al regenerar las plantillas con el servidor corriendo en modo `watch` (`nest start --watch`, que copia assets automáticamente vía `watchAssets`), 2 de los 3 `.xlsx` quedaron en `dist/` con 0 bytes por una condición de carrera entre la escritura del archivo y la copia del watcher. Se corrigió copiando manualmente los archivos correctos a `dist/` y se confirmó que un `npm run build` limpio (sin watch mode corriendo en paralelo) copia los 3 archivos con su tamaño correcto — no es un problema del código de la aplicación, solo de la secuencia de esta regeneración puntual en modo desarrollo.
+
+## Fase 25 — Corrección de los 3 hallazgos críticos de la Auditoría (proyecto Fase 28)
+
+Corrección puntual y acotada de los 3 hallazgos 🔴 críticos de la auditoría integral (proyecto Fase 27): límite de exportación sin cota, condición de carrera en el RUC de Tiendas, e inyección de fórmulas en Excel/CSV. **Cero cambios de contrato HTTP, cero DTOs públicos modificados, cero funcionalidad nueva.**
+
+### C1 — Límite máximo de filas exportables (50,000)
+
+`common/utils/fetch-all-pages.util.ts` — `fetchAllPages` acepta ahora un tercer parámetro opcional `limiteMaximo`. En cada iteración del bucle ya existente (que de todos modos recibe `total` en cada página), si `total > limiteMaximo` se lanza `BadRequestException` (400) con un mensaje que indica acotar el rango de fechas o aplicar más filtros — **antes** de acumular una sola fila adicional y **antes** de que cualquier exportador reciba datos. Sin el tercer parámetro (cualquier otro llamador futuro que no lo pase), el comportamiento es idéntico al de antes de esta corrección — cambio 100% aditivo y retrocompatible en la firma de la función.
+
+`reportes.service.ts` — se agregó la constante `LIMITE_EXPORTACION_FILAS = 50_000` y se pasó a los 3 `fetchAllPages(...)` ya existentes (`exportarReportePedidos`/`exportarReporteEntregas`/`exportarReporteMotorizados`). **Ningún exportador (`ExcelExporter`/`PdfExporter`/`CsvExporter`/`JsonExporter`/`XmlExporter`) se tocó** — la corrección vive enteramente antes de que cualquiera de ellos reciba una sola fila, tal como exigía el alcance de esta fase.
+
+### C2 — Unicidad de `Tienda.ruc` a nivel de base de datos
+
+`prisma/schema.prisma` — `Tienda.ruc` ahora es `@unique` (mismo patrón ya usado para `Cliente.documentoIdentidad`/`PerfilMotorizado.placa` en la Fase 19: MySQL permite múltiples `NULL` en un índice único, así que el campo sigue siendo opcional sin restricción para quien no lo provee). **`nombre` deliberadamente no se tocó** — el alcance de esta fase es únicamente el RUC.
+
+Migración nueva: `20260717145151_tienda_ruc_unique` (`CREATE UNIQUE INDEX tiendas_ruc_key ON tiendas(ruc)`). Se verificó antes de aplicarla que no existían RUCs duplicados en los datos actuales (consulta `GROUP BY ruc HAVING COUNT(*) > 1`, cero resultados) — la migración no requirió ningún backfill ni limpieza de datos.
+
+**Sin cambios de código en `tiendas.service.ts` ni en `tiendas.importador.ts`**: ambos ya capturaban `isUniqueConstraintViolation` y lo traducían a `ConflictException` (409, mensaje "El nombre o RUC de la tienda ya esta en uso") desde que existe el módulo — código defensivo que hasta ahora nunca se activaba porque no existía ninguna restricción real que violar. Con el `@unique` de esta fase, esa captura pasa de código muerto a la pieza que realmente cierra la condición de carrera (verificar-luego-escribir) entre dos solicitudes concurrentes o dos importaciones simultáneas. Se confirmó con una inserción SQL directa (bypaseando la aplicación) que la base de datos rechaza un RUC duplicado — la garantía ya no depende únicamente de la verificación previa de la aplicación.
+
+### C3 — Protección contra CSV/Excel Formula Injection
+
+`common/exports/sanitizar-celda-export.util.ts` (nuevo) — única función `sanitizarCeldaExport(valor)`: si el valor es un `string` no vacío y su primer carácter es `=`, `+`, `-`, `@`, tab o retorno de carro, antepone un apóstrofe (mitigación estándar de OWASP para CSV Injection). Los valores `number` nunca se tocan (un `-5` no es una fórmula). Único punto de saneamiento — reutilizado por `ExcelExporter` y `CsvExporter`, ninguno duplica la lógica.
+
+`excel/excel.exporter.ts` y `csv/csv.exporter.ts` — el valor de cada celda de datos (nunca los encabezados ni la metadata del reporte, que son texto fijo del propio backend) pasa por `sanitizarCeldaExport` antes de escribirse. **`JsonExporter`, `XmlExporter` y `PdfExporter` no se tocaron** (JSON es intrínsecamente seguro; XML ya escapaba correctamente vía `xmlbuilder2`; PDF no interpreta fórmulas).
+
+### Pruebas realizadas
+
+- **C1**: simulación aislada de `fetchAllPages` con un `total` de 49,999/50,000/50,001/200,000 — confirmado que el límite exacto (50,000) se permite y que cualquier valor por encima se rechaza con `400` y el mensaje esperado; export real de un pedido de prueba (muy por debajo del límite) confirmado exitoso end-to-end.
+- **C2**: `POST /tiendas` con RUC nuevo → `201`; mismo RUC de nuevo → `409` ("El RUC ya esta en uso"); inserción SQL directa con el mismo RUC (bypaseando la aplicación) → rechazada por MySQL (`Duplicate entry ... for key 'tiendas_ruc_key'`), confirmando que la garantía real está en la base de datos; dos tiendas sin RUC creadas sin conflicto (`NULL` no cuenta como duplicado); importación masiva de 3 tiendas con 1 RUC repetido → 2 importadas, 1 duplicada (`estado: 'duplicado'`, motivo "El RUC ya esta en uso"), la importación continuó sin abortar.
+- **C3**: prueba directa de la utilidad con los 4 payloads de la fase (`=HYPERLINK(...)`, `+SUM(...)`, `-CMD`, `@formula`) más tab/CR/texto normal/números — todos los casos peligrosos correctamente prefijados, texto normal y números intactos; prueba end-to-end real: tienda creada con nombre `=HYPERLINK("http://evil.test","click")`, pedido asociado, exportado en `.xlsx` y `.csv` reales — en ambos archivos el valor quedó como `'=HYPERLINK(...)` (con apóstrofe), confirmado leyendo el binario xlsx con `exceljs` y el CSV crudo.
+- `prisma validate` ✓, `prisma generate` ✓, migración aplicada con `prisma migrate deploy` ✓, `tsc --noEmit` ✓, `eslint` ✓, `npm run build` ✓.
+
+### Archivos modificados
+
+- `prisma/schema.prisma`, migración `prisma/migrations/20260717145151_tienda_ruc_unique/`.
+- `src/common/utils/fetch-all-pages.util.ts`, `src/modules/reportes/reportes.service.ts`.
+- `src/common/exports/sanitizar-celda-export.util.ts` (nuevo), `src/common/exports/excel/excel.exporter.ts`, `src/common/exports/csv/csv.exporter.ts`.
+- `ARCHITECTURE.md` (§7, §8).
+
+**No se modificó**: ningún DTO público, ningún controller, ningún contrato HTTP existente (los 3 endpoints de exportación y los de Tiendas responden exactamente igual que antes salvo los 2 nuevos casos de error explícitamente pedidos: `400` por exceso de filas y `409` por RUC duplicado, ambos ya contemplados en el contrato de errores estándar del proyecto), `tiendas.service.ts`, `tiendas.importador.ts`, `JsonExporter`, `XmlExporter`, `PdfExporter`.
+
+## Fase 26 — Corrección de 8 de los 9 hallazgos ALTOS de la Auditoría (proyecto Fase 29)
+
+Continuación de la Fase 25 (críticos): corrige A2, A4, A5, A6, A8, A9, A11, A13 de la auditoría integral. **A3 (eliminar `PerfilMotorizado.estado`) se excluyó de esta fase** — ver nota al final. A1, A7, A10 y A12 quedaron fuera de alcance explícitamente (JWT, validaciones asociadas a JWT, zip bomb pendiente de validación, testing automatizado).
+
+### A2 — Bloquear reasignación según estado del pedido
+
+Nueva constante `ESTADOS_NO_REASIGNABLES = [entregado, cancelado, rechazado]` (`interfaces/flujo-pedido-repository.interface.ts`, mismo patrón que `ESTADOS_CANCELABLES` ya existente). `FlujoPedidoService.reasignarMotorizado` valida contra ella antes de la transacción (mensaje claro); `FlujoPedidoRepository.reasignarMotorizado` agrega `estado: { notIn: ESTADOS_NO_REASIGNABLES }` a la precondición atómica del `updateMany` ya existente — misma transacción, sin ninguna transacción nueva. Verificado: reasignación válida en estado `asignado` (201), rechazada en `entregado`/`cancelado`/`rechazado` (409 en los 3 casos, con mensaje especificando el estado actual).
+
+### A3 — EXCLUIDO de esta fase (decisión explícita)
+
+El hallazgo original asumía que `PerfilMotorizado.estado` "no es consultado, no es actualizado, no afecta ningún flujo" — cierto únicamente para la lógica de negocio de `flujo-pedido`. Verificado antes de tocar nada: el **Frontend usa activamente este campo** — es obligatorio en el formulario de Crear/Editar Motorizado (`motorizado-form.ts`), se muestra como badge filtrable en la tabla de Motorizados (`motorizados.page.ts`), y es una columna del Reporte de Motorizados. Eliminarlo del backend habría roto esas 3 pantallas sin que esta fase (explícitamente solo de Backend) autorizara corregirlas. Se consultó al usuario antes de proceder; se decidió **no eliminar el campo** en esta fase. Cero cambios de schema, DTOs, servicios o repositorios de `perfiles-motorizados` en esta fase.
+
+### A4 — Cambio de rol bloqueado si existe perfil de motorizado
+
+Nuevo método `IUsuariosRepository.tienePerfilMotorizado(usuarioId)` (`usuarios.repository.ts`), implementado con una consulta directa a `perfil_motorizado` — mismo patrón ya usado por `ReportesRepository` para leer tablas de otros módulos sin pasar por su service, necesario aquí para **no crear una dependencia circular** (`perfiles-motorizados` ya depende de `usuarios`, nunca al revés). `UsuariosService.actualizar` lo verifica únicamente cuando `dto.rol` difiere del rol actual (un `PATCH` que no cambia el rol, o que lo "cambia" al mismo valor, nunca dispara la validación). Verificado: cambio de rol con perfil asociado → 409; mismo usuario actualizando otro campo → 200; usuario sin perfil cambiando de rol en cualquier dirección → 200 (sin falsos positivos).
+
+### A5 — Rate limiting en login/register
+
+`@nestjs/throttler` (nueva dependencia, única para este fin) registrado **exclusivamente en `AuthModule`** — nunca como `APP_GUARD` global, para no afectar ningún otro endpoint. `ThrottlerGuard` es un provider normal de ese módulo; `AuthController` lo activa explícitamente vía `@UseGuards(ThrottlerGuard)` + `@Throttle({ auth: {} })` únicamente en `POST /auth/login` y `POST /auth/register`. Límite: 5 solicitudes / 60 segundos (constantes `LIMITE_SOLICITUDES_AUTH`/`VENTANA_LIMITE_AUTH_MS`, única fuente de estos valores). Verificado en vivo: 6 intentos consecutivos de login → los primeros 5 responden normalmente (401 por credenciales inválidas), el 6.º responde `429`; mismo patrón en register (5×`201`, 6.º `429`); 10 solicitudes consecutivas a `GET /pedidos` (endpoint no relacionado) → las 10 responden `200`, confirmando que el resto de la API no se vio afectada.
+
+### A6 — Swagger condicional a `NODE_ENV`
+
+`main.ts`: todo el bloque de `DocumentBuilder`/`SwaggerModule.setup` (y su log de arranque) ahora está condicionado a `nodeEnv !== 'production'`. Verificado: con `NODE_ENV=production`, `GET /api/docs` responde `404` y el resto de la API (`GET /pedidos`) sigue respondiendo `200` con normalidad; con `NODE_ENV=development` (default), Swagger sigue visible exactamente igual que antes.
+
+### A8 — Validación de firma binaria (magic bytes)
+
+Nueva utilidad compartida `common/utils/firma-archivo.util.ts` (`esImagenWebp`, `esArchivoZip`) — sin librerías nuevas, verificación manual de los primeros bytes del buffer. Aplicada en `foto-entrega.validator.ts` (además del `Content-Type` ya validado, ahora también se exige la firma `RIFF....WEBP` real) y en `ImportacionesService` (nuevo método privado `validarFirmaArchivo`, exige firma ZIP `PK` cuando `formato === 'xlsx'`; `json`/`xml` no tienen firma binaria propia, así que se dejan sin cambios — sus lectores ya rechazan contenido malformado al parsear). Verificado: un archivo con `Content-Type: image/webp` pero contenido de texto plano → `400` ("firma binaria incorrecta"); el mismo request con una cabecera `RIFF`/`WEBP` real → `201`; un `.xlsx` falso (texto plano con extensión/mimetype de xlsx) → `400`; la plantilla oficial real (`.xlsx` genuino) → procesa normalmente.
+
+### A9 — Máximo 5 fotografías en Confirmar Entrega
+
+Nueva constante `FOTO_ENTREGA_CANTIDAD_MAXIMA = 5` (`foto-entrega.validator.ts`, junto a las demás constantes de este dominio), pasada como segundo parámetro (`maxCount`) de `FilesInterceptor` en `flujo-pedido.controller.ts` (antes era `undefined`, sin ningún tope). Verificado: 1 foto → `201`; exactamente 5 fotos → `201`; 6 fotos → `400` (Multer/Nest ya traduce automáticamente la violación de `maxCount` a un `400` controlado, sin exponer ningún detalle interno). El mensaje por defecto de esa traducción ("Unexpected field") se dejó tal cual — ya es un `400` claro y controlado; personalizarlo habría requerido un filtro de excepciones nuevo, desproporcionado para una mejora puramente cosmética fuera del pedido explícito de esta fase.
+
+### A11 — Sucursales exige Tienda activa
+
+`SucursalesService`: nuevo método privado `validarTiendaActiva(tiendaId)` (reutiliza `TiendasService.buscarPorId`, que ya lanza `404` si no existe/está eliminada; agrega el chequeo de `activo`), usado tanto en `crear` como en `actualizar` (cuando se cambia `tiendaId`). Verificado: crear sucursal en tienda activa → `201`; crear en tienda desactivada → `409`; actualizar una sucursal para moverla a una tienda desactivada → `409`; actualizar otro campo sin tocar `tiendaId` → `200` sin verse afectado.
+
+### A13 — `@MaxLength` en los 5 `ListQueryDto` señalados
+
+`ListClientesQueryDto` (`nombre` 150, `telefono` 20, `documentoIdentidad` 20), `ListTiendasQueryDto` (`nombre` 150), `ListSucursalesQueryDto` (`nombre` 150), `ListUsuariosQueryDto` (`usuario` 50, `correo` 150), `ListPerfilesMotorizadosQueryDto` (`placa` 15) — cada límite es exactamente el mismo ya definido en el `Create*Dto` hermano del campo equivalente. Verificado: una búsqueda con un valor de 200 caracteres en cada uno de los 6 filtros → `400` en los 6; una búsqueda normal y corta → `200` sin cambios.
+
+### Pruebas técnicas ejecutadas
+
+`prisma validate` ✓ (sin cambios de schema en esta fase), `prisma generate` ✓, `tsc --noEmit` ✓, `eslint` ✓, `npm run build` ✓. Todas las pruebas funcionales de arriba se ejecutaron contra el servidor real corriendo (`start:dev`), incluida una reinicialización completa con `NODE_ENV=production` para A6. Los datos de prueba creados (pedidos, tiendas, sucursales, usuarios) se limpiaron al finalizar vía la propia API.
+
+### Archivos modificados
+
+- `src/modules/flujo-pedido/interfaces/flujo-pedido-repository.interface.ts`, `flujo-pedido.service.ts`, `flujo-pedido.repository.ts`, `flujo-pedido.controller.ts`.
+- `src/modules/usuarios/interfaces/usuarios-repository.interface.ts`, `usuarios.repository.ts`, `usuarios.service.ts`.
+- `src/modules/auth/auth.module.ts`, `auth.controller.ts` (+ nueva dependencia `@nestjs/throttler`).
+- `src/main.ts`.
+- `src/common/utils/firma-archivo.util.ts` (nuevo).
+- `src/modules/fotos-entrega/foto-entrega.validator.ts`.
+- `src/modules/importaciones/importaciones.service.ts`.
+- `src/modules/sucursales/sucursales.service.ts`.
+- `src/modules/clientes/dto/list-clientes-query.dto.ts`, `src/modules/tiendas/dto/list-tiendas-query.dto.ts`, `src/modules/sucursales/dto/list-sucursales-query.dto.ts`, `src/modules/usuarios/dto/list-usuarios-query.dto.ts`, `src/modules/perfiles-motorizados/dto/list-perfiles-motorizados-query.dto.ts`.
+- `ARCHITECTURE.md`.
+
+**No se modificó**: schema de Prisma, ninguna migración, ningún DTO público de entrada/salida (los `ListQueryDto` solo ganaron una restricción más estricta sobre el mismo campo ya opcional), ningún contrato HTTP (los nuevos códigos de estado — `409`, `429`, `400` — corresponden todos a validaciones de negocio ya contempladas en el patrón de errores estándar del proyecto, no a rutas ni formas de respuesta nuevas), `PerfilMotorizado.estado` (A3, excluido), y ningún archivo de Frontend.
+
+## Fase 27 — Corrección de los 3 hallazgos BAJOS de la Auditoría (proyecto Fase 30)
+
+Cierre de la auditoría integral (proyecto Fase 27): corrige B3, B6, B7. **B1, B2, B4, B5, B8, B9 quedaron fuera de alcance explícitamente.** Sin cambios de schema, sin migraciones, sin cambios de contrato HTTP.
+
+### B3 — `import 'reflect-metadata'` explícito en `main.ts`
+
+Se agregó `import 'reflect-metadata';` como primera línea del archivo (antes de cualquier otro import), con un comentario explicando el motivo: la dependencia ya se cargaba de forma transitoria (arrastrada implícitamente por alguna dependencia del framework) y nunca falló, pero depender de ese arrastre implícito es frágil ante una futura actualización de Nest/TypeScript. `reflect-metadata` ya era una dependencia directa del proyecto (`package.json`), así que no se instaló nada nuevo. Verificado: arranque idéntico, sin ningún cambio de comportamiento observable (decoradores de `class-validator`, Prisma y NestJS siguen funcionando exactamente igual).
+
+### B6 — Evaluación del constructor duplicado en DTOs de respuesta (decisión: mantener)
+
+Se evaluó, sin modificar código, si centralizar el constructor `constructor(partial) { Object.assign(this, partial); }` (idéntico en 13 DTOs de respuesta) en una clase base o utilidad común valía la pena. Confirmado técnicamente que una base genérica autorreferenciada (`class Foo extends ResponseDto<Foo>`) sería compatible con Swagger (que lee `@ApiProperty` vía reflexión de prototipos, no depende de la clase base) y con la serialización actual (los DTOs se construyen manualmente en los mappers, no vía `class-transformer`). Sin embargo, **se decidió no refactorizar**: el ahorro real es de ~2 líneas netas por archivo, a cambio de introducir un patrón de OOP genérico (self-referencing generic) más abstracto que el código actual de 3 líneas — exactamente el tipo de complejidad que este proyecto evita de forma consistente en favor de simplicidad. Cero archivos modificados para B6; los 13 DTOs conservan su constructor actual.
+
+### B7 — Scripts auxiliares versionados y documentados
+
+Se reconstruyeron y se incorporaron al repositorio, en `scripts/` (nunca ejecutados nuevamente), los 2 scripts puntuales usados en fases anteriores y descartados tras su uso único:
+
+- `scripts/backfill/backfill-codigo-pedido.ts` — recálculo de `Pedido.codigoPedido` al formato `PED-AAAA-NNNNNN` (Fase 22/24), reutiliza `PedidoCodigoGenerator` real, idempotente.
+- `scripts/templates/build-plantillas-importacion.ts` — generación de las 3 plantillas `.xlsx` oficiales del Centro de Importaciones (Fase 24/26), mismo estilo visual y contenido ya documentado en esa fase.
+
+`scripts/README.md` (nuevo) documenta el propósito de cada script, su carácter de "ejecutado una única vez, no forma parte de ningún flujo automático", y cómo reproducirlo si hiciera falta. `tsconfig.build.json` ganó `"scripts"` en su `exclude` (además de `tsconfig.json` base, que sí los type-checkea para soporte de IDE) — sin este ajuste, `nest build` compilaba `scripts/` dentro de `dist/`, contaminando el artefacto de producción con código de mantenimiento que nunca debe ejecutarse en ese contexto.
+
+### Pruebas realizadas
+
+- **B3**: backend reiniciado con la nueva línea → arranque limpio, sin errores, mismos módulos/rutas mapeadas que antes.
+- **B6**: sin cambios de código; no aplica prueba funcional adicional (se verificó por inspección que los 13 DTOs mantienen el patrón actual).
+- **B7**: `npm run build` → `dist/` no contiene ningún archivo de `scripts/` (verificado explícitamente); `tsc --noEmit` sobre el proyecto completo (incluyendo `scripts/`) → sin errores; `eslint` sobre `src/**/*.ts` y `scripts/**/*.ts` → sin errores.
+- General: servidor iniciado con `start:dev` → arranque exitoso, `GET /api/docs` (Swagger) → `200`; `GET /usuarios` y `GET /tiendas` → `200`, con la serialización de sus DTOs de respuesta idéntica a la esperada (confirmando que B3 y B6 no alteraron ningún comportamiento observable).
+- `prisma validate` ✓, `prisma generate` ✓, `tsc --noEmit` ✓, `eslint` ✓, `npm run build` ✓.
+
+### Archivos modificados
+
+- `src/main.ts` (B3).
+- `scripts/backfill/backfill-codigo-pedido.ts` (nuevo), `scripts/templates/build-plantillas-importacion.ts` (nuevo), `scripts/README.md` (nuevo) (B7).
+- `tsconfig.build.json` (B7).
+- `ARCHITECTURE.md`.
+
+**No se modificó**: `prisma/schema.prisma`, ninguna migración, ningún DTO de respuesta (B6, decisión explícita de mantener el código actual), ningún controller/service/repository de ningún módulo de negocio, ningún archivo de Frontend.
+
+## Fase 28 — Corrección de hallazgos funcionales de la Auditoría Final de Certificación (proyecto Fase 32)
+
+Corrige N1, N2, N4, N5, N6 de los 7 hallazgos nuevos detectados en la auditoría de certificación (proyecto Fase 31). **N3 (estados `devuelto`/`reprogramado` inalcanzables) y N7 (configuración del pool de conexiones) quedan expresamente fuera** — el primero es una decisión de negocio, el segundo una decisión de infraestructura, ninguna de las dos corresponde a esta fase. Sin cambios de schema, sin migraciones, sin cambios de contrato HTTP existente (los nuevos códigos `400`/`409` son casos de error ya contemplados por el patrón estándar del proyecto).
+
+### N1 — Bloquear pagos sobre pedidos en estado terminal
+
+`PagosService.registrar` ahora valida `pedido.estado` antes de crear el pago, reutilizando `ESTADOS_CANCELABLES` (`modules/flujo-pedido/interfaces/flujo-pedido-repository.interface.ts`) — la misma definición de "estados activos" que ya usa `flujo-pedido`, sin mantener una segunda lista. Un pedido fuera de esos 4 estados (`entregado`, `cancelado`, `rechazado`, `devuelto`, `reprogramado`, `cliente_ausente`) responde `409 Conflict`.
+
+Se incluye deliberadamente `entregado` en el bloqueo: se verificó contra `Frontend/src/pages/rider/mis-pedidos/mis-pedidos.page.ts` (`openConfirmarEntregaModal`) que el Motorizado siempre registra los pagos pendientes **antes** de llamar a `confirmarEntrega` (Fase 20.1: "el cobro ocurre recién cuando el Motorizado entrega el pedido al cliente") — para cuando un pedido llega a `entregado`, sus pagos ya deberían estar completos, así que bloquear pagos nuevos en ese estado no afecta el flujo real y cierra el mismo vacío para los 5 estados terminales restantes con una sola condición.
+
+### N2 — Bloquear eliminación de `PerfilMotorizado` con pedidos activos
+
+Nuevo método `IPerfilesMotorizadosRepository.tienePedidosActivos(perfilId)` (`perfiles-motorizados.repository.ts`), con una consulta directa a la tabla `pedido` (mismo patrón ya usado por `UsuariosRepository.tienePerfilMotorizado`, Fase 29/A4, para evitar inyectar `PedidosService` y crear un ciclo de DI) — `estado: { in: ESTADOS_CANCELABLES }` filtrado por `motorizadoActualId`, misma constante reutilizada que en N1. `PerfilesMotorizadosService.eliminar` la consulta antes de intentar el borrado y responde `409 Conflict` si el perfil tiene algún pedido activo asignado. **No se tocó la relación Prisma ni su `onDelete: SetNull`** (instrucción explícita de esta fase) — la validación ocurre enteramente en la capa de aplicación, antes de que Prisma intente el `DELETE`.
+
+### N4 — `@MaxLength(30)` en `ListPedidosQueryDto.codigoPedido`
+
+Mismo límite ya usado por `codigoPedido VarChar(30)` (schema) y por la corrección A13 (Fase 29) en el resto de `ListQueryDto` del proyecto — Pedidos había quedado fuera de esa corrección original.
+
+### N5 — `@Min(0)` en `CreatePedidoDto.valorProducto`/`costoEnvio`
+
+Ambos campos, antes sin cota inferior, ahora rechazan valores negativos con `400`. `UpdatePedidoDto` (`PartialType(OmitType(CreatePedidoDto, ...))`) hereda la validación automáticamente, sin tocarlo.
+
+### N6 — Cota superior en `CrearPagoDto.monto`/`montoRecibido`
+
+Nueva constante `MONTO_MAXIMO = 99_999_999.99` (`crear-pago.dto.ts`), igual a la capacidad máxima de la columna `Decimal(10,2)` de `Pago`. Antes de esta corrección, un valor por encima de ese límite pasaba `class-validator` y fallaba recién en Prisma, devuelto como `500` genérico por el filtro global de excepciones; ahora se rechaza en la capa de validación con `400`, antes de llegar al repositorio.
+
+### Pruebas realizadas (contra el servidor real, `start:dev`)
+
+- **N1**: pago sobre pedido cancelado → `409`; sobre pedido rechazado → `409`; sobre pedido `asignado` (activo) → `201`; adicionalmente, sobre pedido `entregado` → `409` (verificación extra, consistente con la decisión de incluir `entregado` en el bloqueo). `devuelto` no se pudo reproducir end-to-end (estado inalcanzable, N3 fuera de alcance) — cubierto por la misma condición genérica (`!ESTADOS_CANCELABLES.includes(...)`), sin caso especial para ningún valor puntual.
+- **N2**: perfil de motorizado de prueba con un pedido `asignado` → `DELETE` responde `409` ("tiene pedidos activos asignados"); perfil de prueba sin pedidos → `DELETE` responde `200`.
+- **N4**: `GET /pedidos?codigoPedido=` con 31 caracteres → `400`; con exactamente 30 (límite) → `200`.
+- **N5**: `valorProducto: -5` → `400`; `costoEnvio: -10` → `400`; `valorProducto: 0` (límite) → `201`.
+- **N6**: `monto: 100000000` → `400`; `montoRecibido: 100000000` → `400`; `monto: 99999999.99` (límite exacto) → `201`, sin ningún `500` en ningún caso.
+- `prisma validate` ✓ (sin cambios de schema), `prisma generate` ✓, `tsc --noEmit` ✓, `eslint` ✓, `npm run build` ✓.
+
+### Archivos modificados
+
+- `src/modules/pagos/pagos.service.ts` (N1).
+- `src/modules/perfiles-motorizados/interfaces/perfiles-motorizados-repository.interface.ts`, `perfiles-motorizados.repository.ts`, `perfiles-motorizados.service.ts` (N2).
+- `src/modules/pedidos/dto/list-pedidos-query.dto.ts` (N4).
+- `src/modules/pedidos/dto/create-pedido.dto.ts` (N5).
+- `src/modules/pagos/dto/crear-pago.dto.ts` (N6).
+- `ARCHITECTURE.md`.
+
+**No se modificó**: `prisma/schema.prisma`, ninguna migración, ninguna relación `onDelete` de Prisma, ningún DTO de respuesta, ningún contrato HTTP existente (los nuevos `400`/`409` son casos de error ya contemplados por el patrón estándar del proyecto), N3 (`EstadoPedido.devuelto`/`reprogramado`) ni N7 (pool de conexiones) — ambos expresamente fuera de esta fase.
+
+## Fase 29 — Rediseño del ciclo de vida de Usuarios y Motorizados (proyecto Fase 33)
+
+Rediseña el ciclo de vida de `Usuario`/`PerfilMotorizado` para preservar la integridad histórica del sistema: el historial de negocio es inmutable, ningún usuario con participación operativa puede eliminarse (solo desactivarse). Alcance conjunto Backend + Frontend + Base de Datos.
+
+### Parte 1 — Eliminar únicamente usuarios sin historial
+
+Nuevo `UsuariosRepository.tieneHistorial(usuarioId)`: verifica en paralelo (`Promise.all`) las 5 relaciones con `onDelete: Restrict` hacia `Usuario` en el schema — `pedidosCreados`, `eventosHistorial` (`historial_pedido`), `pagosRegistrados`, `importaciones` (`ImportacionHistorial`), y `perfilMotorizado` (reutilizando `tienePerfilMotorizado`, ya existente desde la Fase 29/A4, sin duplicar la consulta). `UsuariosService.eliminar` la consulta antes de la eliminación lógica (`deletedAt`, ya existente) y responde `409 Conflict` si el usuario tiene cualquiera de esas 5 relaciones — el mensaje indica explícitamente usar la acción de desactivar.
+
+### Parte 2 — Desactivación como mecanismo oficial
+
+Sin cambios de código: `activar`/`desactivar` (`Usuario.activo`) ya existían desde fases anteriores y ya son el mecanismo correcto — esta parte formaliza su rol como la vía normal de salida de personal, reflejado en el Frontend (ver abajo).
+
+### Parte 3 — Filtro por `activo` en Usuarios
+
+Nuevo filtro opcional `activo?: boolean` en `ListUsuariosQueryDto`/`BuscarUsuariosParams`/`UsuariosRepository.buscarMuchos` — sin el filtro, se muestran activos e inactivos indistintamente (compatibilidad hacia atrás). Reutiliza el parser de query booleanas ya existente (`ListIncidentesQueryDto.resuelto`, Fase 12), extraído a `common/utils/parse-boolean-query-param.util.ts` para no duplicarlo una segunda vez.
+
+### Parte 4 — Eliminación de `PerfilMotorizado.estado`
+
+Confirmado (auditoría Fase 27/29, hallazgo A3): `estado` (`EstadoMotorizado`: disponible/ocupado/inactivo) nunca participó en ninguna regla de negocio de `flujo-pedido`. Eliminado por completo: columna + índice + enum en `prisma/schema.prisma` (migración `20260718031600_remove_perfil_motorizado_estado`), DTOs de creación/actualización/listado/respuesta, repositorio, servicio, mapper de `perfiles-motorizados`; `ReporteMotorizadoRow`/`ReporteMotorizadoItemDto`/columna de exportación del Reporte de Productividad; el importador de Motorizados (columna `estado` del archivo, `ImportarMotorizadoFilaDto`) y las 3 plantillas oficiales `.xlsx` regeneradas (`scripts/templates/build-plantillas-importacion.ts` actualizado, columna "estado" retirada de la plantilla de Motorizados). El estado operativo real de un motorizado se deriva ahora exclusivamente de `Usuario.activo`.
+
+### Parte 5 y 6 — Creación de Motorizados y reorganización de la pantalla (Frontend)
+
+Ver `FRONTEND_PROGRESS.md` para el detalle completo. Resumen: el formulario de Usuarios ahora captura la placa inmediatamente cuando el rol es Motorizado (creación/edición de `Usuario` y `PerfilMotorizado` orquestada en el Frontend, sin nuevo endpoint); la pantalla independiente `/admin/motorizados` se retiró — sin `estado`, la única información propia de ese módulo era la placa, insuficiente para justificar un CRUD separado. `perfiles-motorizados` sigue existiendo intacto como recurso REST (usado por `flujo-pedido`, Importaciones y Reportes).
+
+### Parte 7 — Integridad histórica
+
+Verificado empíricamente contra el servidor real: un `PerfilMotorizado` con un pedido activo asignado sigue devolviendo `nombres`/`apellidos`/`placa` completos en `GET /perfiles-motorizados/:id` y en `GET /reportes/motorizados` aun después de desactivar su `Usuario` — ninguna pantalla ni endpoint pierde la relación ni cae a mostrar un id crudo.
+
+### Pruebas realizadas (contra el servidor real, `start:dev`)
+
+- Usuario sin historial → `DELETE` responde `200`. Usuario con historial (pedidos creados) → `409`. Usuario con `PerfilMotorizado` asociado pero sin pedidos → `409` (perfil operativo cuenta como historial por sí solo). Usuario con `PerfilMotorizado` y un pedido activo asignado → `409`.
+- `GET /usuarios?activo=true` / `?activo=false` → cada uno devuelve exactamente el subconjunto esperado.
+- `POST /perfiles-motorizados` sin campo `estado` → `201`, respuesta sin ese campo.
+- `PATCH /usuarios/:id/desactivar` sobre un motorizado con pedido activo asignado → `200`; el pedido y el reporte de productividad siguen resolviendo su nombre/placa completos, sin ningún id huérfano.
+- `prisma validate` ✓, migración aplicada con `prisma migrate deploy` ✓, `prisma generate` ✓, `tsc --noEmit` ✓, `eslint` ✓, `npm run build` ✓ (Backend); `tsc --noEmit` ✓, `eslint` ✓, `vite build` ✓ (Frontend).
+
+### Archivos modificados (Backend)
+
+- `prisma/schema.prisma`, migración `prisma/migrations/20260718031600_remove_perfil_motorizado_estado/`.
+- `src/common/utils/parse-boolean-query-param.util.ts` (nuevo).
+- `src/modules/incidentes/dto/list-incidentes-query.dto.ts` (reutiliza el parser compartido).
+- `src/modules/usuarios/interfaces/usuarios-repository.interface.ts`, `usuarios.repository.ts`, `usuarios.service.ts`, `dto/list-usuarios-query.dto.ts`.
+- `src/modules/perfiles-motorizados/`: `interfaces/perfiles-motorizados-repository.interface.ts`, `perfiles-motorizados.repository.ts`, `perfiles-motorizados.service.ts`, `perfiles-motorizados.mapper.ts`, `perfiles-motorizados.controller.ts`, `dto/create-perfil-motorizado.dto.ts`, `dto/update-perfil-motorizado.dto.ts`, `dto/list-perfiles-motorizados-query.dto.ts`, `dto/perfil-motorizado-response.dto.ts`.
+- `src/modules/reportes/`: `interfaces/reportes-repository.interface.ts`, `reportes.repository.ts`, `reportes.mapper.ts`, `reportes.service.ts`, `dto/reporte-motorizado-item.dto.ts`.
+- `src/modules/importaciones/importadores/motorizados.importador.ts`, `dto/importar-motorizado-fila.dto.ts`.
+- `scripts/templates/build-plantillas-importacion.ts` (plantilla de Motorizados sin columna "estado"), `src/modules/importaciones/plantillas/motorizados.xlsx` (regenerado).
+- `ARCHITECTURE.md`.
+
+**No se modificó**: ningún contrato HTTP existente más allá de lo explícitamente pedido (los endpoints de `perfiles-motorizados` siguen existiendo, solo sin el campo `estado`); ninguna regla de negocio de `flujo-pedido`; `PerfilMotorizado.usuarioId`/relaciones `onDelete` (excepto la columna `estado` retirada, que no era una relación).

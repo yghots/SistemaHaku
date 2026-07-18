@@ -1,7 +1,13 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { MetodoPago } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { ESTADOS_CANCELABLES } from '../flujo-pedido/interfaces/flujo-pedido-repository.interface';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { UsuariosService } from '../usuarios/usuarios.service';
 import { CrearPagoDto } from './dto/crear-pago.dto';
@@ -35,8 +41,20 @@ export class PagosService {
     // Cada buscarPorId ya lanza NotFoundException si el recurso no existe
     // (el pedido no tiene borrado logico: "no encontrado" cubre tanto un
     // id inexistente como uno ya eliminado fisicamente).
-    await this.pedidosService.buscarPorId(pedidoId);
+    const pedido = await this.pedidosService.buscarPorId(pedidoId);
     await this.usuariosService.buscarPorId(BigInt(dto.creadoPorId));
+
+    // Fase 32 (correccion N1 de la auditoria de certificacion): un pedido en
+    // un estado terminal ya no admite pagos nuevos. Reutiliza la misma
+    // definicion de "estados activos" que ya usa flujo-pedido
+    // (ESTADOS_CANCELABLES) en vez de mantener una segunda lista — un
+    // pedido fuera de esos 4 estados (entregado, cancelado, rechazado,
+    // devuelto, reprogramado, cliente_ausente) esta cerrado.
+    if (!ESTADOS_CANCELABLES.includes(pedido.estado)) {
+      throw new ConflictException(
+        `No se puede registrar un pago: el pedido esta en estado '${pedido.estado}'`,
+      );
+    }
 
     const { montoRecibido, vuelto } = this.calcularCamposEfectivo(dto);
 

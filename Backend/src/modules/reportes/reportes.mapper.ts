@@ -42,7 +42,6 @@ export class ReportesMapper {
       nombres: row.nombres,
       apellidos: row.apellidos,
       placa: row.placa,
-      estado: row.estado,
       pedidosAtendidos: row.pedidosAtendidos,
       entregas: row.entregas,
       incidentes: row.incidentes,

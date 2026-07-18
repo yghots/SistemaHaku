@@ -54,6 +54,7 @@ export class UsuariosService {
       usuario: query.usuario,
       correo: query.correo,
       rol: query.rol,
+      activo: query.activo,
     });
 
     return new PaginatedResponseDto(
@@ -75,6 +76,9 @@ export class UsuariosService {
     }
     if (dto.correo && dto.correo !== usuarioActual.correo) {
       await this.validarCorreoDisponible(dto.correo);
+    }
+    if (dto.rol && dto.rol !== usuarioActual.rol) {
+      await this.validarSinPerfilMotorizado(id);
     }
 
     try {
@@ -108,6 +112,17 @@ export class UsuariosService {
 
   async eliminar(id: bigint): Promise<UsuarioResponseDto> {
     await this.obtenerUsuarioOFallar(id);
+
+    // Fase 33 (Parte 1 del rediseno de ciclo de vida): el historial del
+    // negocio es inmutable — un usuario que ya participo en algun proceso
+    // operativo (pedidos, historial, pagos, importaciones, o un perfil de
+    // motorizado asociado) nunca puede eliminarse, solo desactivarse.
+    if (await this.usuariosRepository.tieneHistorial(id)) {
+      throw new ConflictException(
+        'No se puede eliminar el usuario: tiene historial de negocio asociado (pedidos, pagos, importaciones o un perfil de motorizado). Use la accion de desactivar en su lugar.',
+      );
+    }
+
     const usuario = await this.usuariosRepository.eliminarLogicamente(id);
     return UsuariosMapper.toResponseDto(usuario);
   }
@@ -150,6 +165,21 @@ export class UsuariosService {
     const existente = await this.usuariosRepository.buscarPorCorreo(correo);
     if (existente) {
       throw new ConflictException('El correo ya esta en uso');
+    }
+  }
+
+  /**
+   * Fase 29 (correccion A4 de la auditoria): cambiar el rol de un usuario
+   * que ya tiene un perfil de motorizado asociado corrompia la invariante
+   * "todo perfil de motorizado pertenece a un usuario con rol motorizado" —
+   * ahora se rechaza el cambio de rol (en cualquier direccion) mientras
+   * ese perfil siga existiendo.
+   */
+  private async validarSinPerfilMotorizado(usuarioId: bigint): Promise<void> {
+    if (await this.usuariosRepository.tienePerfilMotorizado(usuarioId)) {
+      throw new ConflictException(
+        'No se puede cambiar el rol: el usuario tiene un perfil de motorizado asociado',
+      );
     }
   }
 

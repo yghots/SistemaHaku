@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { esImagenWebp } from '../../common/utils/firma-archivo.util';
 
 /**
  * Unico formato de imagen aceptado para fotografias de recojo/entrega
@@ -17,6 +18,16 @@ export const FOTO_ENTREGA_MIME_PERMITIDO = 'image/webp';
 export const FOTO_ENTREGA_TAMANIO_MAXIMO_BYTES = 5 * 1024 * 1024;
 
 /**
+ * Cantidad maxima de fotografias por solicitud de Confirmar Entrega (Fase
+ * 29, correccion A9 de la auditoria) — antes no habia ningun tope, una
+ * solicitud podia traer una cantidad ilimitada de archivos (cada uno hasta
+ * `FOTO_ENTREGA_TAMANIO_MAXIMO_BYTES`), riesgo de agotamiento de memoria.
+ * Unica fuente de este valor, aplicada via `FilesInterceptor` (segundo
+ * parametro, `maxCount`).
+ */
+export const FOTO_ENTREGA_CANTIDAD_MAXIMA = 5;
+
+/**
  * Validacion centralizada de una fotografia recibida por multipart/form-data
  * — unico punto que decide si un archivo es una foto de entrega valida.
  * Reutilizada por `FlujoPedidoController` (confirmar recojo/entrega); nunca
@@ -31,6 +42,14 @@ export function validarFotoEntrega(
   if (archivo.mimetype !== FOTO_ENTREGA_MIME_PERMITIDO) {
     throw new BadRequestException(
       `Formato de imagen no soportado ('${archivo.mimetype}'). Unicamente se acepta '${FOTO_ENTREGA_MIME_PERMITIDO}'.`,
+    );
+  }
+  // Fase 29 (correccion A8 de la auditoria): el mimetype anterior es el
+  // Content-Type que el propio cliente declaro — trivialmente falsificable.
+  // Se verifica ademas la firma binaria real del archivo (magic bytes).
+  if (!esImagenWebp(archivo.buffer)) {
+    throw new BadRequestException(
+      'El archivo no es una imagen WEBP valida (firma binaria incorrecta).',
     );
   }
   return archivo;

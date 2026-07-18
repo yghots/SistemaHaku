@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  Bike,
   Building2,
   ClipboardList,
   LayoutDashboard,
@@ -29,7 +28,6 @@ const ADMIN_NAV_ITEMS: SidebarNavItem[] = [
   { label: 'Tiendas', href: '/admin/tiendas', icon: Store },
   { label: 'Sucursales', href: '/admin/sucursales', icon: Building2 },
   { label: 'Clientes', href: '/admin/clientes', icon: UsersRound },
-  { label: 'Motorizados', href: '/admin/motorizados', icon: Bike },
   { label: 'Pedidos', href: '/admin/pedidos', icon: Truck },
   { label: 'Incidentes', href: '/admin/incidentes', icon: AlertTriangle },
   { label: 'Reporte de Pedidos', href: '/admin/reportes/pedidos', icon: ClipboardList },

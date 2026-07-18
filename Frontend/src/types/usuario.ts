@@ -39,11 +39,12 @@ export interface UpdateUsuarioPayload {
   rol?: UserRole;
 }
 
-/** Igual a ListUsuariosQueryDto: `usuario`/`correo` son coincidencia parcial, `rol` es exacto (Fase 25) — no hay filtro por activo ni ordenamiento configurable. */
+/** Igual a ListUsuariosQueryDto: `usuario`/`correo` son coincidencia parcial, `rol` exacto (Fase 25), `activo` exacto (Fase 33) — no hay ordenamiento configurable. */
 export interface ListUsuariosParams {
   page: number;
   limit: number;
   usuario?: string;
   correo?: string;
   rol?: UserRole;
+  activo?: boolean;
 }

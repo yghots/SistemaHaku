@@ -54,11 +54,16 @@ const ESTADO_PAGO_LABEL: Record<string, string> = {
   pagado: 'Pagado',
 };
 
+// Fase 28 (correccion C1 de la auditoria): tope maximo de filas exportables
+// por solicitud. Aplicado en las 3 exportaciones via `fetchAllPages` — ver
+// ese archivo para el detalle de donde y como se corta antes de generar
+// el archivo.
+const LIMITE_EXPORTACION_FILAS = 50_000;
+
 const COLUMNAS_REPORTE_MOTORIZADOS: ExportColumna[] = [
   { clave: 'nombres', encabezado: 'Nombres' },
   { clave: 'apellidos', encabezado: 'Apellidos' },
   { clave: 'placa', encabezado: 'Placa' },
-  { clave: 'estado', encabezado: 'Estado' },
   { clave: 'pedidosAtendidos', encabezado: 'Pedidos atendidos' },
   { clave: 'entregas', encabezado: 'Entregas' },
   { clave: 'incidentes', encabezado: 'Incidentes' },
@@ -89,7 +94,6 @@ function filaDesdeMotorizado(
     nombres: item.nombres,
     apellidos: item.apellidos,
     placa: item.placa,
-    estado: item.estado,
     pedidosAtendidos: item.pedidosAtendidos,
     entregas: item.entregas,
     incidentes: item.incidentes,
@@ -195,18 +199,21 @@ export class ReportesService {
   async exportarReportePedidos(
     query: ReportePedidosExportQueryDto,
   ): Promise<ExportArchivo> {
-    const filas = await fetchAllPages((pagina) =>
-      this.reportesRepository.reportePedidos({
-        skip: pagina.skip,
-        take: pagina.take,
-        fechaDesde: query.fechaDesde,
-        fechaHasta: query.fechaHasta,
-        tiendaId: query.tiendaId ? BigInt(query.tiendaId) : undefined,
-        estado: query.estado,
-        motorizadoId: query.motorizadoId
-          ? BigInt(query.motorizadoId)
-          : undefined,
-      }),
+    const filas = await fetchAllPages(
+      (pagina) =>
+        this.reportesRepository.reportePedidos({
+          skip: pagina.skip,
+          take: pagina.take,
+          fechaDesde: query.fechaDesde,
+          fechaHasta: query.fechaHasta,
+          tiendaId: query.tiendaId ? BigInt(query.tiendaId) : undefined,
+          estado: query.estado,
+          motorizadoId: query.motorizadoId
+            ? BigInt(query.motorizadoId)
+            : undefined,
+        }),
+      undefined,
+      LIMITE_EXPORTACION_FILAS,
     );
 
     return this.exportService.exportar(query.formato, {
@@ -224,14 +231,17 @@ export class ReportesService {
   ): Promise<ExportArchivo> {
     this.validarEstadoReporteEntregas(query.estado);
 
-    const filas = await fetchAllPages((pagina) =>
-      this.reportesRepository.reporteEntregas({
-        skip: pagina.skip,
-        take: pagina.take,
-        fechaDesde: query.fechaDesde,
-        fechaHasta: query.fechaHasta,
-        estado: query.estado,
-      }),
+    const filas = await fetchAllPages(
+      (pagina) =>
+        this.reportesRepository.reporteEntregas({
+          skip: pagina.skip,
+          take: pagina.take,
+          fechaDesde: query.fechaDesde,
+          fechaHasta: query.fechaHasta,
+          estado: query.estado,
+        }),
+      undefined,
+      LIMITE_EXPORTACION_FILAS,
     );
 
     return this.exportService.exportar(query.formato, {
@@ -247,16 +257,19 @@ export class ReportesService {
   async exportarReporteMotorizados(
     query: ReporteMotorizadosExportQueryDto,
   ): Promise<ExportArchivo> {
-    const filas = await fetchAllPages((pagina) =>
-      this.reportesRepository.reporteMotorizados({
-        skip: pagina.skip,
-        take: pagina.take,
-        motorizadoId: query.motorizadoId
-          ? BigInt(query.motorizadoId)
-          : undefined,
-        fechaDesde: query.fechaDesde,
-        fechaHasta: query.fechaHasta,
-      }),
+    const filas = await fetchAllPages(
+      (pagina) =>
+        this.reportesRepository.reporteMotorizados({
+          skip: pagina.skip,
+          take: pagina.take,
+          motorizadoId: query.motorizadoId
+            ? BigInt(query.motorizadoId)
+            : undefined,
+          fechaDesde: query.fechaDesde,
+          fechaHasta: query.fechaHasta,
+        }),
+      undefined,
+      LIMITE_EXPORTACION_FILAS,
     );
 
     return this.exportService.exportar(query.formato, {

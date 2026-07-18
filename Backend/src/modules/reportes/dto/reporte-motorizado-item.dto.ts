@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { EstadoMotorizado } from '@prisma/client';
 
 export class ReporteMotorizadoItemDto {
   @ApiProperty({ description: 'Id del perfil de motorizado' })
@@ -13,12 +12,6 @@ export class ReporteMotorizadoItemDto {
 
   @ApiProperty({ description: 'Placa del vehiculo' })
   placa: string;
-
-  @ApiProperty({
-    description: 'Estado operativo actual del motorizado',
-    enum: EstadoMotorizado,
-  })
-  estado: EstadoMotorizado;
 
   @ApiProperty({
     description:

@@ -50,8 +50,7 @@ export class PerfilesMotorizadosController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'Listar perfiles con paginacion y filtros por usuario, estado o placa',
+    summary: 'Listar perfiles con paginacion y filtros por usuario o placa',
   })
   @ApiResponse({ status: 200, description: 'Listado paginado de perfiles' })
   @ApiResponse({ status: 400, description: 'Parametros de consulta invalidos' })
@@ -79,7 +78,7 @@ export class PerfilesMotorizadosController {
 
   @Patch(':id')
   @ApiOperation({
-    summary: 'Actualizar placa y/o estado de un perfil de motorizado',
+    summary: 'Actualizar la placa de un perfil de motorizado',
   })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({

@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { EstadoMotorizado } from '@prisma/client';
 
 export class PerfilMotorizadoResponseDto {
   @ApiProperty({ description: 'Identificador unico del perfil' })
@@ -16,12 +15,6 @@ export class PerfilMotorizadoResponseDto {
 
   @ApiProperty({ description: 'Placa del vehiculo que usa' })
   placa: string;
-
-  @ApiProperty({
-    description: 'Estado operativo del motorizado',
-    enum: EstadoMotorizado,
-  })
-  estado: EstadoMotorizado;
 
   constructor(partial: PerfilMotorizadoResponseDto) {
     Object.assign(this, partial);

@@ -14,6 +14,8 @@ const ROL_OPTIONS = [
 export interface UsuarioFormMode {
   mode: 'create' | 'edit';
   initial?: Usuario;
+  /** Placa ya registrada del perfil de motorizado del usuario (solo modo 'edit' + rol motorizado con perfil existente). */
+  initialPlaca?: string;
 }
 
 export interface UsuarioFormValues {
@@ -24,6 +26,8 @@ export interface UsuarioFormValues {
   /** Vacio en modo edicion significa "no cambiar la contraseña". */
   password: string;
   rol: UserRole;
+  /** Solo presente cuando rol === 'motorizado' (Fase 33: creacion/edicion de motorizado unificada con Usuarios). */
+  placa?: string;
 }
 
 export interface UsuarioFormHandle {
@@ -36,8 +40,19 @@ export interface UsuarioFormHandle {
  * Formulario compartido por Crear y Editar usuario (misma infraestructura,
  * tal como pide el brief). El modo `edit` precarga valores y vuelve
  * opcional la contraseña.
+ *
+ * Fase 33 (Parte 5 del rediseno de ciclo de vida): cuando el rol elegido es
+ * "Motorizado", se muestra un campo "Placa" adicional — evita el flujo
+ * fragmentado de crear el Usuario y luego, por separado, su perfil
+ * operativo. El campo se muestra/oculta dinamicamente segun el valor
+ * elegido en el Select de rol (no solo el valor inicial), reutilizando el
+ * patron ya establecido de campos condicionales del proyecto.
  */
-export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFormHandle {
+export function buildUsuarioForm({
+  mode,
+  initial,
+  initialPlaca,
+}: UsuarioFormMode): UsuarioFormHandle {
   const nombresField = Input({
     name: 'nombres',
     label: 'Nombres',
@@ -81,7 +96,21 @@ export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFor
     required: true,
     value: initial?.rol ?? 'administrador',
     options: ROL_OPTIONS,
+    onChange: (value) => actualizarVisibilidadPlaca(value as UserRole),
   });
+
+  const placaField = Input({
+    name: 'placa',
+    label: 'Placa',
+    required: true,
+    value: initialPlaca,
+    helpText: 'Placa del vehiculo que usa este motorizado.',
+  });
+
+  function actualizarVisibilidadPlaca(rol: UserRole): void {
+    placaField.wrapper.classList.toggle('hidden', rol !== 'motorizado');
+  }
+  actualizarVisibilidadPlaca(initial?.rol ?? 'administrador');
 
   const element = el(
     'div',
@@ -92,6 +121,7 @@ export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFor
     correoField.wrapper,
     passwordField.wrapper,
     rolField.wrapper,
+    placaField.wrapper,
   );
 
   function validate(): UsuarioFormValues | null {
@@ -100,6 +130,7 @@ export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFor
     usuarioField.setError(undefined);
     correoField.setError(undefined);
     passwordField.setError(undefined);
+    placaField.setError(undefined);
 
     const nombres = nombresField.input.value.trim();
     const apellidos = apellidosField.input.value.trim();
@@ -107,6 +138,7 @@ export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFor
     const correo = correoField.input.value.trim();
     const password = passwordField.input.value;
     const rol = rolField.select.value as UserRole;
+    const placa = placaField.input.value.trim();
 
     let valid = true;
 
@@ -153,8 +185,26 @@ export function buildUsuarioForm({ mode, initial }: UsuarioFormMode): UsuarioFor
       valid = false;
     }
 
+    if (rol === 'motorizado') {
+      if (!placa) {
+        placaField.setError('Este campo es obligatorio');
+        valid = false;
+      } else if (placa.length > 15) {
+        placaField.setError('Maximo 15 caracteres');
+        valid = false;
+      }
+    }
+
     if (!valid) return null;
-    return { nombres, apellidos, usuario, correo, password, rol };
+    return {
+      nombres,
+      apellidos,
+      usuario,
+      correo,
+      password,
+      rol,
+      ...(rol === 'motorizado' ? { placa } : {}),
+    };
   }
 
   return { element, validate };

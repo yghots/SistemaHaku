@@ -63,12 +63,14 @@ export class CreatePedidoDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
   valorProducto?: number;
 
   @ApiPropertyOptional({ description: 'Costo de envio' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
   costoEnvio?: number;
 
   @ApiPropertyOptional({

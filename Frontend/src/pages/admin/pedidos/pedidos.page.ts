@@ -114,10 +114,7 @@ export function PedidosPage(): HTMLElement {
         label: sucursalLabelById.get(sucursal.id) ?? sucursal.nombre,
       }));
       motorizadoLabelById = new Map(
-        motorizados.data.map((motorizado) => [
-          motorizado.id,
-          `${formatMotorizado(motorizado)} (${motorizado.estado})`,
-        ]),
+        motorizados.data.map((motorizado) => [motorizado.id, formatMotorizado(motorizado)]),
       );
       motorizadoOptions = toSelectOptions(
         motorizados.data,

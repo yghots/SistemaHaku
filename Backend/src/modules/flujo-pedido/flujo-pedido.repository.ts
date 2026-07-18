@@ -13,6 +13,7 @@ import {
   ConfirmarEntregaData,
   ConfirmarRecojoData,
   ESTADOS_CANCELABLES,
+  ESTADOS_NO_REASIGNABLES,
   IFlujoPedidoRepository,
   IniciarRutaData,
   ReasignarMotorizadoData,
@@ -150,18 +151,20 @@ export class FlujoPedidoRepository implements IFlujoPedidoRepository {
 
   reasignarMotorizado(data: ReasignarMotorizadoData): Promise<Pedido> {
     return this.prisma.$transaction(async (tx) => {
-      // A diferencia de las demas transiciones, reasignarMotorizado no
-      // valida el estado del pedido (inconsistencia real ya documentada y
-      // dejada abierta a proposito, ver AUDIT_REPORT.md/DEVELOPMENT_PROGRESS.md
-      // Fase 11/12) — la condicion atomica preserva exactamente esa misma
-      // semantica: solo exige que el motorizado actual siga siendo el
-      // esperado, nunca un estado en particular.
+      // Fase 29 (correccion A2 de la auditoria): a diferencia de antes,
+      // ahora tambien exige que el pedido no este en un estado terminal
+      // (ESTADOS_NO_REASIGNABLES) — ademas de que el motorizado actual siga
+      // siendo el esperado. Mismo patron que el resto de las transiciones:
+      // la condicion del `updateMany` cubre ambas precondiciones a la vez.
       const pedido = await this.actualizarPedidoCondicional(
         tx,
         data.pedidoId,
-        { motorizadoActualId: data.motorizadoAnteriorId },
+        {
+          motorizadoActualId: data.motorizadoAnteriorId,
+          estado: { notIn: ESTADOS_NO_REASIGNABLES },
+        },
         { motorizadoActualId: data.motorizadoNuevoId },
-        'El motorizado anterior no coincide con el motorizado asignado al pedido',
+        'No se pudo reasignar el motorizado: el pedido cambio de estado o de motorizado antes de completar la operacion',
       );
 
       await this.crearEventoHistorial(tx, {

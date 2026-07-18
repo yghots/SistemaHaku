@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { Sucursal } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
 import { assertFound } from '../../common/utils/assert-found.util';
@@ -22,7 +22,7 @@ export class SucursalesService {
   async crear(dto: CreateSucursalDto): Promise<SucursalResponseDto> {
     // Lanza NotFoundException si la tienda no existe o esta eliminada
     // logicamente (TiendasService.buscarPorId ya filtra deletedAt).
-    await this.tiendasService.buscarPorId(BigInt(dto.tiendaId));
+    await this.validarTiendaActiva(BigInt(dto.tiendaId));
 
     const sucursal = await this.sucursalesRepository.crear({
       tiendaId: BigInt(dto.tiendaId),
@@ -65,8 +65,9 @@ export class SucursalesService {
     await this.obtenerSucursalOFallar(id);
 
     if (dto.tiendaId !== undefined) {
-      // Valida que la nueva tienda tambien exista y no este eliminada.
-      await this.tiendasService.buscarPorId(BigInt(dto.tiendaId));
+      // Valida que la nueva tienda tambien exista, no este eliminada, y
+      // este activa.
+      await this.validarTiendaActiva(BigInt(dto.tiendaId));
     }
 
     const sucursalActualizada = await this.sucursalesRepository.actualizar(id, {
@@ -91,5 +92,22 @@ export class SucursalesService {
   private async obtenerSucursalOFallar(id: bigint): Promise<Sucursal> {
     const sucursal = await this.sucursalesRepository.buscarPorId(id);
     return assertFound(sucursal, 'Sucursal no encontrada');
+  }
+
+  /**
+   * Fase 29 (correccion A11 de la auditoria): antes solo se verificaba que
+   * la tienda existiera (sin importar si estaba desactivada) — contradecia
+   * lo ya documentado en DEVELOPMENT_PROGRESS.md ("valida tienda existente
+   * y activa"). `TiendasService.buscarPorId` ya lanza NotFoundException si
+   * no existe o esta eliminada logicamente; aqui se agrega el chequeo de
+   * `activo`.
+   */
+  private async validarTiendaActiva(tiendaId: bigint): Promise<void> {
+    const tienda = await this.tiendasService.buscarPorId(tiendaId);
+    if (!tienda.activo) {
+      throw new ConflictException(
+        'No se puede asignar la sucursal: la tienda esta desactivada',
+      );
+    }
   }
 }

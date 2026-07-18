@@ -23,7 +23,7 @@ import { validarFila } from './validar-fila.util';
  */
 @Injectable()
 export class MotorizadosImportador implements IEntidadImportador {
-  readonly columnas = ['usuario', 'placa', 'estado'];
+  readonly columnas = ['usuario', 'placa'];
 
   constructor(
     private readonly usuariosService: UsuariosService,
@@ -39,7 +39,6 @@ export class MotorizadosImportador implements IEntidadImportador {
       {
         usuario: fila.usuario,
         placa: fila.placa,
-        estado: fila.estado,
       },
     );
     if (!dto) {
@@ -62,7 +61,6 @@ export class MotorizadosImportador implements IEntidadImportador {
         await this.perfilesMotorizadosService.crear({
           usuarioId: Number(usuario.id),
           placa: dto.placa,
-          estado: dto.estado,
         });
       }
     } catch (error) {

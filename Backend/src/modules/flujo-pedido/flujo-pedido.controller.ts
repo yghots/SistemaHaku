@@ -17,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import {
+  FOTO_ENTREGA_CANTIDAD_MAXIMA,
   FOTO_ENTREGA_TAMANIO_MAXIMO_BYTES,
   validarFotoEntrega,
   validarFotosEntrega,
@@ -120,7 +121,7 @@ export class FlujoPedidoController {
   @ApiResponse({
     status: 400,
     description:
-      'Datos de entrada invalidos, ninguna foto adjunta o formato de imagen no soportado',
+      'Datos de entrada invalidos, ninguna foto adjunta, mas fotos que el maximo permitido, o formato de imagen no soportado',
   })
   @ApiResponse({
     status: 404,
@@ -132,7 +133,7 @@ export class FlujoPedidoController {
       'El motorizado no coincide con el asignado, o el pedido no esta en estado en_ruta',
   })
   @UseInterceptors(
-    FilesInterceptor('fotos', undefined, {
+    FilesInterceptor('fotos', FOTO_ENTREGA_CANTIDAD_MAXIMA, {
       limits: { fileSize: FOTO_ENTREGA_TAMANIO_MAXIMO_BYTES },
     }),
   )

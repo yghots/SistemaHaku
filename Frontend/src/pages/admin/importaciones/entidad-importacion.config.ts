@@ -35,8 +35,8 @@ export const ENTIDADES_IMPORTACION_CONFIG: EntidadImportacionConfig[] = [
     entidad: 'motorizado',
     nombre: 'Motorizados',
     descripcion:
-      'Vincula un perfil de motorizado (placa y estado) a una cuenta de usuario que ya exista en el sistema.',
-    camposObligatorios: ['usuario', 'placa', 'estado'],
+      'Vincula un perfil de motorizado (placa) a una cuenta de usuario que ya exista en el sistema.',
+    camposObligatorios: ['usuario', 'placa'],
     camposOpcionales: [],
     reglaDuplicados:
       'El usuario, si ya tiene un perfil de motorizado asociado; o la placa, si ya esta en uso por otro perfil.',

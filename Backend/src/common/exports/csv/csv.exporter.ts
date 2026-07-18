@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ExportArchivo, ExportSolicitud, IExportador } from '../export.types';
 import { construirNombreArchivo } from '../export-filename.util';
+import { sanitizarCeldaExport } from '../sanitizar-celda-export.util';
 
 const SEPARADOR = ',';
 const SALTO_LINEA = '\r\n';
@@ -52,7 +53,7 @@ export class CsvExporter implements IExportador {
       lineas.push(
         fila(
           ...solicitud.columnas.map((columna) =>
-            String(registro[columna.clave] ?? ''),
+            String(sanitizarCeldaExport(registro[columna.clave] ?? '')),
           ),
         ),
       );

@@ -1,6 +1,5 @@
 import type { FormatoExportacion } from './export';
 import type { MetodoPago } from './pago';
-import type { EstadoMotorizado } from './perfil-motorizado';
 import type { EstadoPagoPedido, EstadoPedido } from './pedido';
 
 /**
@@ -68,7 +67,6 @@ export interface ReporteMotorizadoItem {
   nombres: string;
   apellidos: string;
   placa: string;
-  estado: EstadoMotorizado;
   pedidosAtendidos: number;
   entregas: number;
   incidentes: number;
