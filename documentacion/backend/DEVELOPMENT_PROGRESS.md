@@ -2621,7 +2621,7 @@ Excepción explícita y acotada al feature freeze: **no se reimplementó nada de
 
 ### Documentación actualizada
 
-`ARCHITECTURE.md` §9 (nota aclaratoria: el módulo es agnóstico de quién lo llama, la corrección fue de orquestación frontend). Ver `Frontend/FRONTEND_PROGRESS.md`, Fase 20.1, para el detalle completo del nuevo flujo en el panel del Motorizado.
+`ARCHITECTURE.md` §9 (nota aclaratoria: el módulo es agnóstico de quién lo llama, la corrección fue de orquestación frontend). Ver `documentacion/frontend/FRONTEND_PROGRESS.md`, Fase 20.1, para el detalle completo del nuevo flujo en el panel del Motorizado.
 
 ## Fase 21 — Nuevo sistema de almacenamiento de fotografías (LONGBLOB)
 

@@ -11,7 +11,7 @@ Infraestructura del proyecto exclusivamente. No se implementó ninguna pantalla 
 ### Análisis previo realizado
 
 - Se leyó `Documentacion_HAKU_Courier(1).docx` (documentación funcional completa: roles, flujo de negocio, 20 casos de uso, modelo de 8 tablas, historial de cambios) y el diagrama entidad-relación (`haku_courier_esquema_base_de_datos.png`) — ambos consistentes entre sí y con `Backend/prisma/schema.prisma`.
-- Se revisó el backend completo (ya construido en 12 fases previas): `Backend/API_OVERVIEW.md`, `Backend/ARCHITECTURE.md`, `Backend/DEVELOPMENT_PROGRESS.md`, y el propio código fuente.
+- Se revisó el backend completo (ya construido en 12 fases previas): `documentacion/backend/API_OVERVIEW.md`, `documentacion/backend/ARCHITECTURE.md`, `documentacion/backend/DEVELOPMENT_PROGRESS.md`, y el propio código fuente.
 
 **Inconsistencias encontradas entre documentación funcional y backend implementado** (reportadas antes de escribir código, no bloquean esta fase, relevantes para cuando se construyan las pantallas de Pedidos/Tiendas/Motorizados en fases futuras):
 
@@ -319,7 +319,7 @@ Listado con 2 filtros + paginación → Crear (modal, validación cliente + mane
 
 ### Endpoints consumidos
 
-`GET /usuarios` (con `usuario`/`correo`/`page`/`limit`), `GET /usuarios/:id`, `POST /usuarios`, `PATCH /usuarios/:id`, `PATCH /usuarios/:id/activar`, `PATCH /usuarios/:id/desactivar`, `DELETE /usuarios/:id`. Ninguno nuevo respecto a los ya documentados en `Backend/API_OVERVIEW.md`.
+`GET /usuarios` (con `usuario`/`correo`/`page`/`limit`), `GET /usuarios/:id`, `POST /usuarios`, `PATCH /usuarios/:id`, `PATCH /usuarios/:id/activar`, `PATCH /usuarios/:id/desactivar`, `DELETE /usuarios/:id`. Ninguno nuevo respecto a los ya documentados en `documentacion/backend/API_OVERVIEW.md`.
 
 ### Pruebas realizadas
 
@@ -400,7 +400,7 @@ Ambas extensiones son retrocompatibles: ningún módulo existente (Usuarios, Tie
 
 ### Endpoints consumidos
 
-`GET/POST/PATCH/DELETE /tiendas`, `PATCH /tiendas/:id/activar`, `PATCH /tiendas/:id/desactivar`, `GET/POST/PATCH/DELETE /sucursales`. Ninguno nuevo respecto a los ya documentados en `Backend/API_OVERVIEW.md`.
+`GET/POST/PATCH/DELETE /tiendas`, `PATCH /tiendas/:id/activar`, `PATCH /tiendas/:id/desactivar`, `GET/POST/PATCH/DELETE /sucursales`. Ninguno nuevo respecto a los ya documentados en `documentacion/backend/API_OVERVIEW.md`.
 
 ### Pruebas realizadas
 
@@ -474,7 +474,7 @@ Ningún otro componente/infraestructura nuevo: `ResourceTable`, `FormModal`, `Ro
 
 ### Endpoints consumidos
 
-`GET/POST/PATCH/DELETE /clientes`, `GET/POST/PATCH/DELETE /perfiles-motorizados`, `GET /usuarios` (reutilizado, ya documentado desde la Fase 4, para poblar el selector de usuarios-motorizado). Ninguno nuevo respecto a los ya documentados en `Backend/API_OVERVIEW.md`.
+`GET/POST/PATCH/DELETE /clientes`, `GET/POST/PATCH/DELETE /perfiles-motorizados`, `GET /usuarios` (reutilizado, ya documentado desde la Fase 4, para poblar el selector de usuarios-motorizado). Ninguno nuevo respecto a los ya documentados en `documentacion/backend/API_OVERVIEW.md`.
 
 ### Pruebas realizadas
 
@@ -550,7 +550,7 @@ Listado con 3 filtros (código, estado, sucursal) + paginación → Crear (Clien
 
 ### Endpoints consumidos
 
-`GET/POST/PATCH/DELETE /pedidos`, más `GET /clientes`, `GET /tiendas`, `GET /sucursales` (y `GET /clientes/:id`, `GET /sucursales/:id`), todos ya documentados y reutilizados de fases anteriores. Ninguno nuevo respecto a `Backend/API_OVERVIEW.md`.
+`GET/POST/PATCH/DELETE /pedidos`, más `GET /clientes`, `GET /tiendas`, `GET /sucursales` (y `GET /clientes/:id`, `GET /sucursales/:id`), todos ya documentados y reutilizados de fases anteriores. Ninguno nuevo respecto a `documentacion/backend/API_OVERVIEW.md`.
 
 ### Pruebas realizadas
 
@@ -1427,7 +1427,7 @@ auditoría.
 ## Fase 16 — Incorporación de `nombres`/`apellidos` al modelo Usuario
 
 El backend agregó `nombres`/`apellidos` (obligatorios) a `Usuario`
-(ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 14). Esta fase adapta el
+(ver `documentacion/backend/DEVELOPMENT_PROGRESS.md`, Fase 14). Esta fase adapta el
 frontend a ese contrato ya existente — no agrega funcionalidades ni
 modifica el flujo de login (`identificador` + `password`, sin cambios).
 
@@ -1486,7 +1486,7 @@ campos, sin requerir ajuste.
 - Verificado contra el backend real: `POST /usuarios` con
   `nombres`/`apellidos`, `POST /auth/register`, `POST /auth/login`
   (respuesta incluye los campos nuevos), `PATCH /usuarios/:id` parcial —
-  ver detalle completo en `Backend/DEVELOPMENT_PROGRESS.md` Fase 14.
+  ver detalle completo en `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 14.
 - Regresión: `GET /reportes/*`, `GET /perfiles-motorizados` sin cambios.
 
 **Limitación de esta verificación**: no hay herramienta de
@@ -1512,7 +1512,7 @@ Usuarios.
 
 El backend extendió `PerfilMotorizadoResponseDto` y
 `ReporteMotorizadoItemDto` con `nombres`/`apellidos` (ver
-`Backend/DEVELOPMENT_PROGRESS.md`, Fase 15). Esta fase adapta el
+`documentacion/backend/DEVELOPMENT_PROGRESS.md`, Fase 15). Esta fase adapta el
 frontend para que ningún motorizado se identifique jamás únicamente por
 su placa — siempre "Nombre Completo · Placa". Ninguna funcionalidad
 nueva, ninguna lógica de negocio ni relación de datos modificada.
@@ -1579,7 +1579,7 @@ de dark mode que verificar.
   ("Miguel Torres", "Carlos Rojas") a dos motorizados de prueba vía
   `PATCH /usuarios/:id` y se confirmó que `GET /perfiles-motorizados` y
   `GET /reportes/motorizados` reflejan el cambio de inmediato — ver
-  detalle en `Backend/DEVELOPMENT_PROGRESS.md` Fase 15.
+  detalle en `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 15.
 - Regresión: ningún consumidor existente de `PerfilMotorizado`/
   `ReporteMotorizadoItem` se rompió (solo se agregaron campos a los
   tipos).
@@ -1601,7 +1601,7 @@ Ninguno bloqueante.
 
 ## Fase 18 — Infraestructura de Exportación de Reportes
 
-El backend agregó 3 endpoints nuevos (`GET /reportes/{pedidos,entregas,motorizados}/export`, ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 16) que devuelven el reporte ya generado en `xlsx`/`pdf`/`csv`/`json`/`xml`. Esta fase consume esos endpoints: un único botón "Exportar" (Dropdown de 5 formatos) reutilizado por los 3 reportes existentes — el frontend nunca genera el archivo, solo lo pide y lo descarga.
+El backend agregó 3 endpoints nuevos (`GET /reportes/{pedidos,entregas,motorizados}/export`, ver `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 16) que devuelven el reporte ya generado en `xlsx`/`pdf`/`csv`/`json`/`xml`. Esta fase consume esos endpoints: un único botón "Exportar" (Dropdown de 5 formatos) reutilizado por los 3 reportes existentes — el frontend nunca genera el archivo, solo lo pide y lo descarga.
 
 ### Componente nuevo
 
@@ -1624,7 +1624,7 @@ El backend agregó 3 endpoints nuevos (`GET /reportes/{pedidos,entregas,motoriza
 ### Corrección necesaria en infraestructura compartida (no de negocio)
 
 - **`src/services/http/http-client.ts`**: el interceptor de errores asumía que `error.response.data` siempre era el JSON ya parseado del backend. Con `responseType: 'blob'` (introducido por primera vez en esta fase), una respuesta de error (ej. `400` por `formato` inválido) llega como `Blob`, no como objeto — sin corrección, el mensaje real del backend se perdía y solo quedaba el mensaje genérico de axios. Se agregó `resolveErrorBody()`, que detecta `data instanceof Blob` y lo parsea (`await blob.text()` + `JSON.parse`) antes de normalizar el `HttpError`. No cambia el comportamiento para ninguna solicitud JSON existente (el `Blob` nunca ocurre en ese caso).
-- **Backend — `main.ts`**: se agregó `exposedHeaders: ['Content-Disposition']` a `app.enableCors(...)` — sin esto, el navegador oculta ese header a JavaScript aunque viaje en la respuesta, y `filenameFromContentDisposition` no tendría nada que leer. Cambio de una línea, documentado también en `Backend/ARCHITECTURE.md` §7 y `Backend/DEVELOPMENT_PROGRESS.md` Fase 16.
+- **Backend — `main.ts`**: se agregó `exposedHeaders: ['Content-Disposition']` a `app.enableCors(...)` — sin esto, el navegador oculta ese header a JavaScript aunque viaje en la respuesta, y `filenameFromContentDisposition` no tendría nada que leer. Cambio de una línea, documentado también en `documentacion/backend/ARCHITECTURE.md` §7 y `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 16.
 
 Ambos son correcciones de infraestructura estrictamente necesarias para que la funcionalidad pedida en esta fase funcione en un navegador real — no son cambios de arquitectura ni de reglas de negocio.
 
@@ -1693,7 +1693,7 @@ Ningún otro layout, componente, página, ruta ni endpoint fue modificado.
 
 ## Fase 19 — Centro de Importaciones
 
-Módulo administrativo nuevo: `Importaciones`. Único punto de entrada para importar masivamente Clientes, Tiendas y Motorizados (Excel/JSON/XML), con vista previa antes de escribir nada, confirmación transaccional por fila, historial y reporte de errores descargable. Consume el módulo backend nuevo `importaciones` (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 17).
+Módulo administrativo nuevo: `Importaciones`. Único punto de entrada para importar masivamente Clientes, Tiendas y Motorizados (Excel/JSON/XML), con vista previa antes de escribir nada, confirmación transaccional por fila, historial y reporte de errores descargable. Consume el módulo backend nuevo `importaciones` (ver `documentacion/backend/DEVELOPMENT_PROGRESS.md`, Fase 17).
 
 ### Estructura
 
@@ -1731,7 +1731,7 @@ Verificado por lectura de código: la grilla de tarjetas (`grid-cols-1 lg:grid-c
 
 - `npx tsc --noEmit`, `npx eslint "src/**/*.ts"`, `npx prettier --write` (4 archivos reformateados, sin cambio funcional), `npm run build` — los cuatro sin errores.
 - Servidor de desarrollo (Vite) verificado activo, sirviendo la SPA y transformando el módulo nuevo sin errores.
-- Backend probado extensivamente end-to-end (15+ escenarios: 3 entidades × 3 formatos, duplicados, idempotencia, importación parcial, historial, reporte de errores, casos límite) — ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 17 para el detalle completo, incluidos 2 bugs reales encontrados y corregidos durante esas pruebas.
+- Backend probado extensivamente end-to-end (15+ escenarios: 3 entidades × 3 formatos, duplicados, idempotencia, importación parcial, historial, reporte de errores, casos límite) — ver `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 17 para el detalle completo, incluidos 2 bugs reales encontrados y corregidos durante esas pruebas.
 
 **Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — el flujo completo (seleccionar archivo → analizar → vista previa → confirmar → resultado, apertura/cierre de los 3 modales, descarga real de archivos desde el navegador) no se ejecutó de forma interactiva por mí; la verificación se hizo por lectura exhaustiva del código (mismos componentes/patrones ya verificados visualmente en fases anteriores) y por pruebas funcionales directas contra el backend real (curl + multipart) que confirman que cada endpoint responde exactamente lo que el frontend espera.
 
@@ -1742,11 +1742,11 @@ Verificado por lectura de código: la grilla de tarjetas (`grid-cols-1 lg:grid-c
 
 ### Problemas encontrados
 
-Ninguno bloqueante en el frontend. Los 2 bugs reales encontrados durante esta fase (usuarioId inexistente dejando filas sin historial; usuario eliminado lógicamente abortando el archivo completo) eran del backend y se corrigieron ahí — ver el detalle en `Backend/DEVELOPMENT_PROGRESS.md` Fase 17.
+Ninguno bloqueante en el frontend. Los 2 bugs reales encontrados durante esta fase (usuarioId inexistente dejando filas sin historial; usuario eliminado lógicamente abortando el archivo completo) eran del backend y se corrigieron ahí — ver el detalle en `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 17.
 
 ## Fase 20 — Módulo de Pagos
 
-Integrado dentro del detalle de Pedidos (Admin): sin pantalla independiente, tal como pide la fase. Nueva sección "Pagos" en el modal de "Ver detalle" — resumen calculado, historial de pagos y registro vía `FormModal`. Consume el módulo backend nuevo `pagos` (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 18).
+Integrado dentro del detalle de Pedidos (Admin): sin pantalla independiente, tal como pide la fase. Nueva sección "Pagos" en el modal de "Ver detalle" — resumen calculado, historial de pagos y registro vía `FormModal`. Consume el módulo backend nuevo `pagos` (ver `documentacion/backend/DEVELOPMENT_PROGRESS.md`, Fase 18).
 
 ### Estructura
 
@@ -1776,7 +1776,7 @@ Verificado por lectura de código: la nueva sección reutiliza exactamente los m
 
 - `npx tsc --noEmit`, `npx eslint "src/**/*.ts"`, `npx prettier --write` (2 archivos reformateados, sin cambio funcional), `npm run build` — los cuatro sin errores.
 - Servidor de desarrollo (Vite) verificado activo; el módulo `pedidos.page.ts` (modificado) transforma sin errores y todos sus imports nuevos resuelven correctamente.
-- Backend probado exhaustivamente end-to-end (5 métodos de pago, parcial, mixto, vuelto exacto y con cambio real, las 7 validaciones pedidas, resumen recalculado) — ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 18 para el detalle completo.
+- Backend probado exhaustivamente end-to-end (5 métodos de pago, parcial, mixto, vuelto exacto y con cambio real, las 7 validaciones pedidas, resumen recalculado) — ver `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 18 para el detalle completo.
 
 **Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — la interacción real (abrir el detalle de un pedido, ocultar/mostrar los campos de efectivo al cambiar el método, ver el vuelto actualizarse en vivo, confirmar el registro) no se ejecutó de forma interactiva por mí; la verificación se hizo por lectura exhaustiva del código (mismos componentes ya verificados visualmente) y por pruebas funcionales directas contra el backend real que confirman que cada endpoint responde exactamente lo que el formulario espera.
 
@@ -1791,7 +1791,7 @@ Ninguno bloqueante.
 
 ## Fase 21 — Integración completa del módulo de Pagos
 
-Fase de integración pura: **no se tocó la infraestructura del módulo Pagos** (endpoints, DTOs, reglas de negocio, entidad `Pago` de la Fase 20 intactos). El backend ganó campos derivados nuevos en Pedidos/Reportes (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 19) que esta fase consume desde el frontend en las 4 pantallas que la fase pedía: Crear Pedido, Editar Pedido, Detalle de Pedido y Tabla de Pedidos, más Reportes y Exportaciones.
+Fase de integración pura: **no se tocó la infraestructura del módulo Pagos** (endpoints, DTOs, reglas de negocio, entidad `Pago` de la Fase 20 intactos). El backend ganó campos derivados nuevos en Pedidos/Reportes (ver `documentacion/backend/DEVELOPMENT_PROGRESS.md`, Fase 19) que esta fase consume desde el frontend en las 4 pantallas que la fase pedía: Crear Pedido, Editar Pedido, Detalle de Pedido y Tabla de Pedidos, más Reportes y Exportaciones.
 
 ### Tipos ampliados
 
@@ -1837,7 +1837,7 @@ Verificado por lectura de código: toda la UI nueva (sección "Pagos" del formul
 
 - `npx tsc --noEmit`, `npx eslint . --fix`, `npx prettier --write` (4 archivos reformateados, sin cambio funcional), `npm run build` (`tsc && vite build`) — las cuatro sin errores.
 - Servidor de desarrollo (Vite) y backend verificados activos y respondiendo.
-- Backend probado exhaustivamente a nivel de API simulando exactamente la secuencia que ejecuta el frontend: pedido sin pagos, pedido con pago único, pedido con pagos mixtos (3 métodos, parcial → pagado), registrar un pago adicional después de creado, y un pago que falla su propia validación sin afectar al pedido ya creado — ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 19 para el detalle completo (incluye las 5 exportaciones de ambos reportes verificadas con columnas diferenciadas).
+- Backend probado exhaustivamente a nivel de API simulando exactamente la secuencia que ejecuta el frontend: pedido sin pagos, pedido con pago único, pedido con pagos mixtos (3 métodos, parcial → pagado), registrar un pago adicional después de creado, y un pago que falla su propia validación sin afectar al pedido ya creado — ver `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 19 para el detalle completo (incluye las 5 exportaciones de ambos reportes verificadas con columnas diferenciadas).
 
 **Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — el flujo interactivo completo (agregar/quitar pagos en el formulario de creación, ver las columnas nuevas en la tabla, abrir el modal "Registrar pago" desde la fila, exportar un reporte y abrir el archivo descargado, verificar visualmente responsive/dark mode) no se ejecutó interactivamente por mí; la verificación se hizo por lectura exhaustiva del código (mismos componentes ya verificados visualmente en fases anteriores), compilación/build limpios, y pruebas funcionales directas contra el backend real que confirman que cada endpoint responde exactamente lo que el frontend espera consumir.
 
@@ -1852,7 +1852,7 @@ Ninguno bloqueante.
 
 ## Fase 20.1 — Corrección funcional: el registro de pagos pasa del Administrador al Motorizado
 
-Corrección de un error de modelado detectado en la revisión funcional de la Fase 21: el cobro al cliente ocurre en el momento de la entrega, no al crear el pedido — así que el registro de pagos se movió por completo del panel Administrador al flujo "Confirmar entrega" del panel Motorizado. **Cero cambios en el backend** (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 20.1) y **cero componentes nuevos** — se reutiliza `buildPagoForm()`/`METODO_PAGO_LABEL` (Fase 20) tal cual.
+Corrección de un error de modelado detectado en la revisión funcional de la Fase 21: el cobro al cliente ocurre en el momento de la entrega, no al crear el pedido — así que el registro de pagos se movió por completo del panel Administrador al flujo "Confirmar entrega" del panel Motorizado. **Cero cambios en el backend** (ver `documentacion/backend/DEVELOPMENT_PROGRESS.md`, Fase 20.1) y **cero componentes nuevos** — se reutiliza `buildPagoForm()`/`METODO_PAGO_LABEL` (Fase 20) tal cual.
 
 ### Panel Administrador: el registro de pagos desaparece por completo
 
@@ -1891,7 +1891,7 @@ Verificado por lectura de código: las 4 `Section` nuevas del formulario de "Con
 ### Pruebas realizadas
 
 - `npx tsc --noEmit`, `npx eslint . --fix`, `npx prettier --write` (1 archivo reformateado, sin cambio funcional), `npm run build` (`tsc && vite build`) — las cuatro sin errores.
-- Backend probado a nivel de API reproduciendo exactamente la secuencia que ahora ejecuta el Motorizado: crear pedido (Admin) → asignar → confirmar recojo → iniciar ruta → **pago inválido (falla, entrega NO se confirma, pedido permanece en `en_ruta`)** → pagos mixtos válidos (efectivo con vuelto + yape, completa el saldo) → **confirmar entrega (éxito, `estadoPago: "pagado"`)** → verificado también el caso "confirmar entrega sin ningún pago" (pedido de valor 0, éxito) — ver `Backend/DEVELOPMENT_PROGRESS.md` Fase 20.1 para el detalle completo. Regresión verificada en `GET /pedidos` y `GET /reportes/entregas` sobre los pedidos de prueba.
+- Backend probado a nivel de API reproduciendo exactamente la secuencia que ahora ejecuta el Motorizado: crear pedido (Admin) → asignar → confirmar recojo → iniciar ruta → **pago inválido (falla, entrega NO se confirma, pedido permanece en `en_ruta`)** → pagos mixtos válidos (efectivo con vuelto + yape, completa el saldo) → **confirmar entrega (éxito, `estadoPago: "pagado"`)** → verificado también el caso "confirmar entrega sin ningún pago" (pedido de valor 0, éxito) — ver `documentacion/backend/DEVELOPMENT_PROGRESS.md` Fase 20.1 para el detalle completo. Regresión verificada en `GET /pedidos` y `GET /reportes/entregas` sobre los pedidos de prueba.
 
 **Limitación de esta verificación**: no hay herramienta de automatización de navegador en este entorno — el flujo interactivo completo (abrir "Confirmar entrega" desde la tabla del Motorizado, agregar/quitar pagos, ver el resumen económico cargar en vivo, confirmar y verificar que la sección "Pagos" del Administrador ya no muestra ningún botón de acción) no se ejecutó interactivamente por mí; la verificación se hizo por lectura exhaustiva del código y por pruebas funcionales directas contra el backend real que confirman que cada endpoint responde exactamente lo que el nuevo flujo espera.
 
@@ -2197,7 +2197,7 @@ El Backend (ver `DEVELOPMENT_PROGRESS.md`, Fase 24/proyecto 26) estandarizó las
 
 ## Fase 27 — Rediseño del ciclo de vida de Usuarios y Motorizados (proyecto Fase 33)
 
-Alcance conjunto Backend + Frontend (ver `Backend/DEVELOPMENT_PROGRESS.md`, Fase 29, para el detalle del lado del servidor). El historial del negocio es inmutable: ningún usuario que haya participado en un proceso operativo puede eliminarse, solo desactivarse — la Fase 33 alinea las pantallas de Usuarios y Motorizados con esa regla.
+Alcance conjunto Backend + Frontend (ver `documentacion/backend/DEVELOPMENT_PROGRESS.md`, Fase 29, para el detalle del lado del servidor). El historial del negocio es inmutable: ningún usuario que haya participado en un proceso operativo puede eliminarse, solo desactivarse — la Fase 33 alinea las pantallas de Usuarios y Motorizados con esa regla.
 
 ### Decisión: retirar la pantalla independiente `/admin/motorizados`
 

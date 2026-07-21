@@ -1,6 +1,8 @@
 -- CreateTable
 CREATE TABLE `usuarios` (
     `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `nombres` VARCHAR(100) NOT NULL,
+    `apellidos` VARCHAR(100) NOT NULL,
     `usuario` VARCHAR(50) NOT NULL,
     `correo` VARCHAR(150) NOT NULL,
     `password_hash` VARCHAR(255) NOT NULL,
@@ -21,6 +23,7 @@ CREATE TABLE `tiendas` (
     `activo` BOOLEAN NOT NULL DEFAULT true,
     `deleted_at` DATETIME(3) NULL,
 
+    UNIQUE INDEX `tiendas_ruc_key`(`ruc`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -47,6 +50,7 @@ CREATE TABLE `clientes` (
     `documento_identidad` VARCHAR(20) NULL,
     `deleted_at` DATETIME(3) NULL,
 
+    UNIQUE INDEX `clientes_documento_identidad_key`(`documento_identidad`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -55,10 +59,9 @@ CREATE TABLE `perfiles_motorizados` (
     `id` BIGINT NOT NULL AUTO_INCREMENT,
     `usuario_id` BIGINT NOT NULL,
     `placa` VARCHAR(15) NOT NULL,
-    `estado` ENUM('disponible', 'ocupado', 'inactivo') NOT NULL DEFAULT 'disponible',
 
     UNIQUE INDEX `perfiles_motorizados_usuario_id_key`(`usuario_id`),
-    INDEX `perfiles_motorizados_estado_idx`(`estado`),
+    UNIQUE INDEX `perfiles_motorizados_placa_key`(`placa`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -105,7 +108,8 @@ CREATE TABLE `fotos_entrega` (
     `pedido_id` BIGINT NOT NULL,
     `motorizado_id` BIGINT NOT NULL,
     `tipo` ENUM('recojo', 'entrega') NOT NULL,
-    `url_imagen` VARCHAR(500) NOT NULL,
+    `imagen` LONGBLOB NOT NULL,
+    `mime_type` VARCHAR(50) NOT NULL DEFAULT 'image/webp',
     `es_principal` BOOLEAN NOT NULL DEFAULT false,
 
     INDEX `fotos_entrega_pedido_id_tipo_idx`(`pedido_id`, `tipo`),
@@ -121,6 +125,55 @@ CREATE TABLE `incidentes` (
     `resuelto` BOOLEAN NOT NULL DEFAULT false,
 
     INDEX `incidentes_motorizado_id_resuelto_idx`(`motorizado_id`, `resuelto`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `importacion_historial` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `entidad` ENUM('cliente', 'tienda', 'motorizado') NOT NULL,
+    `archivo_nombre` VARCHAR(255) NOT NULL,
+    `formato` ENUM('xlsx', 'json', 'xml') NOT NULL,
+    `usuario_id` BIGINT NOT NULL,
+    `total_encontrados` INTEGER NOT NULL,
+    `importados` INTEGER NOT NULL,
+    `duplicados` INTEGER NOT NULL,
+    `errores` INTEGER NOT NULL,
+    `tiempo_procesamiento_ms` INTEGER NOT NULL,
+    `estado` ENUM('completado', 'parcial') NOT NULL,
+    `creado_en` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `importacion_historial_entidad_creado_en_idx`(`entidad`, `creado_en`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `importacion_detalle` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `historial_id` BIGINT NOT NULL,
+    `fila` INTEGER NOT NULL,
+    `estado` ENUM('duplicado', 'invalido') NOT NULL,
+    `motivo` VARCHAR(255) NOT NULL,
+    `campo` VARCHAR(100) NULL,
+    `valor` VARCHAR(255) NULL,
+
+    INDEX `importacion_detalle_historial_id_idx`(`historial_id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `pagos` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `pedido_id` BIGINT NOT NULL,
+    `metodo_pago` ENUM('efectivo', 'yape', 'plin', 'transferencia', 'tarjeta') NOT NULL,
+    `monto` DECIMAL(10, 2) NOT NULL,
+    `monto_recibido` DECIMAL(10, 2) NULL,
+    `vuelto` DECIMAL(10, 2) NULL,
+    `observacion` VARCHAR(255) NULL,
+    `creado_por_id` BIGINT NOT NULL,
+    `creado_en` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `pagos_pedido_id_idx`(`pedido_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -162,3 +215,15 @@ ALTER TABLE `incidentes` ADD CONSTRAINT `incidentes_pedido_id_fkey` FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE `incidentes` ADD CONSTRAINT `incidentes_motorizado_id_fkey` FOREIGN KEY (`motorizado_id`) REFERENCES `perfiles_motorizados`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `importacion_historial` ADD CONSTRAINT `importacion_historial_usuario_id_fkey` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `importacion_detalle` ADD CONSTRAINT `importacion_detalle_historial_id_fkey` FOREIGN KEY (`historial_id`) REFERENCES `importacion_historial`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `pagos` ADD CONSTRAINT `pagos_pedido_id_fkey` FOREIGN KEY (`pedido_id`) REFERENCES `pedidos`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `pagos` ADD CONSTRAINT `pagos_creado_por_id_fkey` FOREIGN KEY (`creado_por_id`) REFERENCES `usuarios`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
