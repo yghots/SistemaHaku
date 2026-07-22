@@ -15,6 +15,7 @@ import { PagosModule } from './modules/pagos/pagos.module';
 import { PedidosModule } from './modules/pedidos/pedidos.module';
 import { PerfilesMotorizadosModule } from './modules/perfiles-motorizados/perfiles-motorizados.module';
 import { ReportesModule } from './modules/reportes/reportes.module';
+import { SolicitudesPedidoModule } from './modules/solicitudes-pedido/solicitudes-pedido.module';
 import { SucursalesModule } from './modules/sucursales/sucursales.module';
 import { TiendasModule } from './modules/tiendas/tiendas.module';
 import { UsuariosModule } from './modules/usuarios/usuarios.module';
@@ -42,6 +43,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ReportesModule,
     ImportacionesModule,
     PagosModule,
+    SolicitudesPedidoModule,
   ],
   controllers: [AppController],
   providers: [AppService],

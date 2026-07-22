@@ -76,6 +76,8 @@ async function bootstrap(): Promise<void> {
       .addTag('Reportes')
       .addTag('Importaciones')
       .addTag('Pagos')
+      .addTag('Solicitudes de Pedido')
+      .addTag('Solicitudes de Pedido (Publico)')
       .build();
     const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup(`${apiPrefix}/docs`, app, swaggerDocument);

@@ -35,6 +35,17 @@ enum TipoEventoHistorial {
   reasignacion
 }
 
+// Fase XX (Solicitudes de Pedido): canal de ingreso previo al Pedido,
+// pensado para integraciones externas (WhatsApp, formulario web, API) que
+// todavia no deben crear un Pedido directamente. 'pendiente' es el unico
+// estado desde el que se puede aprobar/rechazar (transicion final, sin
+// reversa) — mismo criterio de estado terminal ya usado en EstadoPedido.
+enum EstadoSolicitudPedido {
+  pendiente
+  aprobada
+  rechazada
+}
+
 enum TipoFoto {
   recojo
   entrega
@@ -114,8 +125,8 @@ model Usuario {
 }
 
 model Tienda {
-  id     BigInt @id @default(autoincrement())
-  nombre String @db.VarChar(150)
+  id        BigInt    @id @default(autoincrement())
+  nombre    String    @db.VarChar(150)
   // @unique (Fase 28, correccion C2 de la auditoria): antes solo se
   // verificaba en el servicio (verificar-luego-escribir, sin atomicidad),
   // la misma clase de condicion de carrera que ya se habia corregido para
@@ -141,8 +152,9 @@ model Sucursal {
   esPrincipal Boolean   @default(false) @map("es_principal")
   deletedAt   DateTime? @map("deleted_at")
 
-  tienda  Tienda   @relation(fields: [tiendaId], references: [id], onDelete: Restrict)
-  pedidos Pedido[]
+  tienda      Tienda            @relation(fields: [tiendaId], references: [id], onDelete: Restrict)
+  pedidos     Pedido[]
+  solicitudes SolicitudPedido[]
 
   @@map("sucursales")
 }
@@ -159,9 +171,45 @@ model Cliente {
   documentoIdentidad String?   @unique @map("documento_identidad") @db.VarChar(20)
   deletedAt          DateTime? @map("deleted_at")
 
-  pedidos Pedido[]
+  pedidos     Pedido[]
+  solicitudes SolicitudPedido[]
 
   @@map("clientes")
+}
+
+// Fase XX (Solicitudes de Pedido): canal de ingreso previo al Pedido, para
+// integraciones externas (WhatsApp, formulario web, API) que registran una
+// solicitud sin crear directamente un Pedido. Un administrador la aprueba
+// (crea/actualiza el Cliente por telefono y crea el Pedido con el flujo ya
+// existente) o la rechaza (con motivo). `clienteId`/`pedidoId` quedan nulos
+// hasta la aprobacion — son el rastro de que efecto tuvo la solicitud, nunca
+// se escriben en la creacion publica. Sin `creadoPorId`: el origen es
+// publico/no autenticado, a diferencia de Pedido.creadoPorId.
+model SolicitudPedido {
+  id                  BigInt                @id @default(autoincrement())
+  sucursalId          BigInt                @map("sucursal_id")
+  nombreCompleto      String                @map("nombre_completo") @db.VarChar(150)
+  telefono            String                @db.VarChar(20)
+  direccionEntrega    String                @map("direccion_entrega") @db.VarChar(255)
+  descripcionProducto String?               @map("descripcion_producto") @db.VarChar(255)
+  valorProducto       Decimal?              @map("valor_producto") @db.Decimal(10, 2)
+  costoEnvio          Decimal?              @map("costo_envio") @db.Decimal(10, 2)
+  observaciones       String?               @db.VarChar(500)
+  estado              EstadoSolicitudPedido @default(pendiente)
+  motivoRechazo       String?               @map("motivo_rechazo") @db.VarChar(255)
+  clienteId           BigInt?               @map("cliente_id")
+  pedidoId            BigInt?               @unique @map("pedido_id")
+  creadoEn            DateTime              @default(now()) @map("creado_en")
+  revisadoEn          DateTime?             @map("revisado_en")
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cliente  Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  pedido   Pedido?  @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+
+  @@index([estado])
+  @@index([creadoEn])
+  @@index([sucursalId])
+  @@map("solicitudes_pedido")
 }
 
 model PerfilMotorizado {
@@ -207,10 +255,11 @@ model Pedido {
   motorizadoActual PerfilMotorizado? @relation("MotorizadoActualDelPedido", fields: [motorizadoActualId], references: [id], onDelete: SetNull)
   creadoPor        Usuario           @relation("PedidosCreadosPorUsuario", fields: [creadoPorId], references: [id], onDelete: Restrict)
 
-  fotos      FotoEntrega[]
-  historial  HistorialPedido[]
-  incidentes Incidente[]
-  pagos      Pago[]
+  fotos           FotoEntrega[]
+  historial       HistorialPedido[]
+  incidentes      Incidente[]
+  pagos           Pago[]
+  solicitudPedido SolicitudPedido?
 
   @@index([estado])
   @@index([creadoEn])

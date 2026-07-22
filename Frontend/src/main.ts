@@ -13,6 +13,7 @@ import { PedidosPage } from '@pages/admin/pedidos/pedidos.page';
 import { ReporteEntregasPage } from '@pages/admin/reportes/reporte-entregas.page';
 import { ReporteMotorizadosPage } from '@pages/admin/reportes/reporte-motorizados.page';
 import { ReportePedidosPage } from '@pages/admin/reportes/reporte-pedidos.page';
+import { SolicitudesPage } from '@pages/admin/solicitudes/solicitudes.page';
 import { SucursalesPage } from '@pages/admin/sucursales/sucursales.page';
 import { TiendasPage } from '@pages/admin/tiendas/tiendas.page';
 import { UsuariosPage } from '@pages/admin/usuarios/usuarios.page';
@@ -155,6 +156,17 @@ function mountAdminPanel(): void {
     {
       title: 'Pedidos',
       breadcrumb: [{ label: 'Pedidos' }],
+    },
+  );
+
+  router.register(
+    '/admin/solicitudes',
+    withAuth((container) => {
+      container.appendChild(SolicitudesPage());
+    }),
+    {
+      title: 'Solicitudes',
+      breadcrumb: [{ label: 'Solicitudes' }],
     },
   );
 
